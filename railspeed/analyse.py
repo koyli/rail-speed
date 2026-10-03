@@ -4,7 +4,7 @@ Routes are grouped from trains in the page itself, so that its filters (calling
 point, operator) choose which trains count towards each route's best."""
 from collections import defaultdict
 
-from .network import METRES_PER_MILE
+from .network import METRES_PER_MILE, span
 
 OPERATORS = {
     "AW": "Transport for Wales", "CC": "c2c", "CH": "Chiltern Railways", "CS": "Caledonian Sleeper",
@@ -51,15 +51,10 @@ def _public_stops(locs):
     return [i for i, l in enumerate(locs) if l.pub_arr is not None or l.pub_dep is not None]
 
 
-def _span(net, locs, i, j):
-    """Track metres from locs[i] to locs[j] via every intermediate timing point.
-    Returns (metres, fraction measured on the network) or (None, 0)."""
-    r = net.route_m([l.tiploc for l in locs[i:j + 1]])
-    return r if r is not None else (None, 0.0)
-
-
-def analyse(services, net, stations):
+def analyse(services, net, stations, artefacts=None):
+    """`artefacts`, if given, collects start-to-stop runs dropped as impossibly fast."""
     trains, segs = [], {}
+    artefacts = artefacts if artefacts is not None else []
     for sched, dates in services:
         locs = sched.locs
         stops = _public_stops(locs)
@@ -72,7 +67,11 @@ def analyse(services, net, stations):
         mins = locs[d].pub_arr - locs[o].pub_dep
         if mins <= 0:
             continue
-        route_m, quality = _span(net, locs, o, d)
+        # One walk along the train's whole path; every distance below is a
+        # difference of positions on it.
+        pos, legs = net.positions([l.tiploc for l in locs])
+        r = span(pos, legs, o, d) if pos else None
+        route_m, quality = _at_least_crow(r, net.crow_m(locs[o].tiploc, locs[d].tiploc))
         crow_m = net.crow_m(locs[o].tiploc, locs[d].tiploc)
         op = sched.atoc
         trains.append({
@@ -103,8 +102,12 @@ def analyse(services, net, stations):
             ka, kb = stations.key(la.tiploc), stations.key(lb.tiploc)
             if ka == kb:
                 continue
-            m, q = _span(net, locs, a, b)
-            if m is None:
+            r = span(pos, legs, a, b) if pos else None
+            if r is None:
+                continue
+            m, q = _at_least_crow(r, net.crow_m(la.tiploc, lb.tiploc))
+            if (t1 - t0) * 60 < _min_run_seconds(m):
+                artefacts.append((sched.uid, ka, kb, t1 - t0, m))
                 continue
             pair = (ka, kb, op)
             mins_ab = t1 - t0
@@ -139,6 +142,28 @@ def _hhmm(t):
     half = "½" if t % 1 else ""
     t = int(t) % 1440
     return f"{t // 60:02d}:{t % 60:02d}{half}"
+
+
+def _at_least_crow(r, crow_m):
+    """Track can't be shorter than the straight line between stations; where the
+    network measure says otherwise (local quirks in the model), use the straight
+    line and mark the distance as estimated."""
+    if r is None:
+        return None, 0.0
+    m, q = r
+    if crow_m is not None and m < crow_m:
+        return crow_m, 0.0
+    return m, q
+
+
+# Generous acceleration and braking (m/s^2): a start-to-stop run timed faster
+# than this allows is a timetable artefact (e.g. a working timetable giving 30
+# seconds for the mile from Southend Central to Southend East).
+MAX_ACCEL = 1.0
+
+
+def _min_run_seconds(metres):
+    return 2 * (metres / MAX_ACCEL) ** 0.5
 
 
 def _arr_dep(loc):

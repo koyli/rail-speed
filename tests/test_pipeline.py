@@ -89,6 +89,12 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(net.route_m(["A", "B"]), (20_000, 0.0))
         self.assertEqual(len(net.suspect), 1)
 
+    def test_route_never_shorter_than_crow_and_impossible_runs(self):
+        self.assertEqual(analyse._at_least_crow((1000, 1.0), 1200), (1200, 0.0))
+        self.assertEqual(analyse._at_least_crow((1300, 1.0), 1200), (1300, 1.0))
+        # 1.6 km start-to-stop needs at least 80 s at 1 m/s^2; 30 s is an artefact.
+        self.assertAlmostEqual(analyse._min_run_seconds(1600), 80)
+
     def test_build_writes_site(self):
         with tempfile.TemporaryDirectory() as out:
             cli.main(["build", "--date", "2026-10-05", "--schedule", os.path.join(FIX, "schedule.json"),

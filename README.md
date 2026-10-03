@@ -32,19 +32,26 @@ python3 -m unittest                       # tests on a synthetic fixture
   the GB section, with "Paris Nord" as a stub at the tunnel boundary.
 - **End-to-end**: public departure at the first public call to public arrival at
   the last one, including dwell time at stops.
-- **Route miles**: shortest path over the network between each pair of
-  consecutive timing points, passing points included, so the path follows the
-  train's actual route. Each TIPLOC covers 1-3 km of track nodes, so every leg
-  starts from the exact node the previous one reached; otherwise each timing
-  point would lose its own length from the total. A leg the network can't
-  resolve falls back to a straight line, and the train is shown with `≈`.
-  Checked against published mileages: King's Cross–Edinburgh 392.7 (computed
-  392.6–393.0), King's Cross–York 188.3 (188.2), Paddington–Bristol 118.3 (117.5–118.2).
-  The first build parses the 650 MB TPS XML once and caches the graph.
+- **Route miles**: shortest path over the network through every timing
+  point the train passes, passing points included, so the path follows the
+  train's actual route. Rail-replacement bus and ship links in the model are
+  excluded. Each TIPLOC covers 1-3 km of track nodes, so every stop is placed at
+  its centre (the median chainage of its nodes) and distances run centre to
+  centre. The path normally stays continuous from leg to leg, but a leg that
+  would make an out-and-back detour to a crossover is re-measured from scratch.
+  Track can't be shorter than the straight line, so where the measurement comes
+  out shorter (local quirks in the model) the straight line is used and the
+  figure is marked `≈`. Checked against published mileages: King's
+  Cross–Edinburgh 392.7 (computed 391.4–391.8), Stevenage–Grantham 77.9 (77.9),
+  Paddington–Bristol 118.3 (117.9–118.6). The first build parses the 650 MB TPS
+  XML once and caches the graph.
 - **Routes**: unordered pairs of origin and destination stations, grouped by CRS.
   A route's speed is the speed of its fastest train.
 - **Start-to-stop**: the fastest working-timetable run between each pair of
-  consecutive calls.
+  consecutive calls, kept per operator so the operator filter works. Runs
+  timed faster than a train could start and stop over that distance (1 m/s²
+  accelerating and braking) are timetable artefacts and are dropped, e.g. 30
+  seconds for the mile from Southend Central to Southend East.
 
 ## Publishing
 

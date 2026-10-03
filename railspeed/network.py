@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 METRES_PER_MILE = 1609.344
+DETOUR_M = 1000   # see Network.positions
 
 
 def load_naptan(path):
@@ -55,6 +56,8 @@ class Network:
         self.tiploc_nodes = {}         # tiploc -> nodes it owns (TPS); BPLAN nodes are tiplocs
         self.coords = {}               # tiploc -> (e, n)
         self._cache = {}
+        self._centres = {}
+        self.chainage = {}             # station node -> (line reference id, metres along it)
         self.suspect = []              # (a, b, network m, straight m) legs rejected as impossible
 
     @property
@@ -109,15 +112,15 @@ class Network:
 
     def load_tps(self, path, on_date):
         """Load the TPS network model (tar.bz2 of XML_p.xml), via a pickle cache."""
-        cache = path + ".graph.v3.pickle"  # bump when the parse changes
+        cache = path + ".graph.v4.pickle"  # bump when the parse changes
         if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(path):
             with open(cache, "rb") as f:
-                edges, stations = pickle.load(f)
+                edges, stations, self.chainage = pickle.load(f)
         else:
             print("  parsing TPS XML (first run only, a few minutes)...")
-            edges, stations = _parse_tps(path)
+            edges, stations, self.chainage = _parse_tps(path)
             with open(cache, "wb") as f:
-                pickle.dump((edges, stations), f, pickle.HIGHEST_PROTOCOL)
+                pickle.dump((edges, stations, self.chainage), f, pickle.HIGHEST_PROTOCOL)
         day = on_date.isoformat()
         for a, b, metres, valid_from, valid_to in edges:
             if valid_from <= day <= valid_to:
@@ -143,42 +146,96 @@ class Network:
             return crow(self.coords[a], self.coords[b])
         return None
 
-    def route_m(self, tiplocs):
-        """Track metres along a train's timing points, in order.
+    def positions(self, tiplocs):
+        """Distance along a train's path of each of its timing points, in metres.
 
-        A TIPLOC owns a spread of track nodes (often 1-3 km of a station's
-        approaches), so each leg starts from the exact node the previous leg
-        reached rather than anywhere in the TIPLOC; otherwise every timing
-        point would shave its own length off the total. A point that can't be
-        reached is skipped, bridging from the last good one; an unplaceable
-        start or end gives None rather than a silently truncated distance.
-        Returns (metres, fraction measured on the network), or None."""
-        total = measured = 0.0
-        prev = tiplocs[0]
-        at = tuple(self.nodes_of(prev))   # where on the graph we are; () if off it
-        if not at and prev not in self.coords:
-            return None   # can't place the start (e.g. Paris for Eurostar)
-        for k, b in enumerate(tiplocs[1:], 1):
-            if b == prev:
+        A TIPLOC owns a spread of track nodes (often 1-3 km of a station and its
+        approaches). Each point is placed at its centre (see _offset), so
+        distances run centre to centre; measuring node-to-node would drop a
+        station length at each stop, enough to make a 0.8 mile hop shorter than
+        the straight line.
+
+        Normally each leg starts from the exact node the previous one reached,
+        keeping the path continuous (accurate over long distances, where many
+        junction timing points have no usable chainage). But that can strand
+        the path on the wrong running line and send it on an out-and-back to a
+        crossover (20 km near Whitchurch), so each leg is also measured starting
+        from anywhere in the previous point's spread, and that is used when the
+        continuous one is more than DETOUR_M longer.
+
+        Returns (positions, legs): positions[k] is metres or None for a point
+        that couldn't be reached (bridged over); legs is [(k_from, k_to, metres,
+        on_network)]. Returns (None, None) if the start can't be placed (e.g.
+        Paris for Eurostar)."""
+        n = len(tiplocs)
+        pos = [None] * n
+        legs = []
+        first = tiplocs[0]
+        at = tuple(self.nodes_of(first))   # where on the graph we are; () if off it
+        if not at and first not in self.coords:
+            return None, None
+        pos[0] = 0.0
+        cursor = None   # distance along the path of the node `at`, while continuous
+        prev_k = 0
+        for k in range(1, n):
+            a, b = tiplocs[prev_k], tiplocs[k]
+            if b == a:
+                pos[k] = pos[prev_k]
                 continue
-            r = self._leg(prev, at, b)
-            if r is None:
-                if k == len(tiplocs) - 1:
-                    return None
+            fresh = self._leg(a, tuple(self.nodes_of(a)), b)
+            if fresh is None:
                 continue
-            metres, end_node = r
-            total += metres
-            if end_node is not None:
-                measured += metres
-                at = (end_node,)
-            else:
-                at = tuple(self.nodes_of(b))
-            prev = b
-        return total, (measured / total if total else 1.0)
+            if fresh[1] is None:   # straight-line fallback: off the network
+                pos[k] = pos[prev_k] + fresh[0]
+                legs.append((prev_k, k, fresh[0], False))
+                at, cursor, prev_k = tuple(self.nodes_of(b)), None, k
+                continue
+            fresh_m = self._offset(a, fresh[2]) + fresh[0] + self._offset(b, fresh[1])
+            length, end_node = fresh_m, fresh[1]
+            if cursor is not None:
+                cont = self._leg(a, at, b)
+                if cont is not None and cont[1] is not None:
+                    cont_m = cursor + cont[0] + self._offset(b, cont[1]) - pos[prev_k]
+                    if cont_m <= fresh_m + DETOUR_M:
+                        length, end_node = cont_m, cont[1]
+            pos[k] = pos[prev_k] + length
+            legs.append((prev_k, k, length, True))
+            # Continue from the first node reached in b's spread.
+            at, cursor = (end_node,), pos[k] - self._offset(b, end_node)
+            prev_k = k
+        return pos, legs
+
+    def route_m(self, tiplocs):
+        """(metres, fraction measured on the network) from first to last point, or None."""
+        pos, legs = self.positions(tiplocs)
+        if pos is None or pos[-1] is None:
+            return None
+        return span(pos, legs, 0, len(tiplocs) - 1)
+
+    def _offset(self, tiploc, node):
+        """Metres from `node` to the centre of its TIPLOC, along the line.
+
+        A TIPLOC's nodes can sprawl (Winsford's run 263.6-266.4 km along the
+        line, in clusters, with other nodes between), so the centre is taken as
+        the median chainage of its nodes on their main line reference, which
+        sits in the main cluster. 0 where chainage isn't comparable."""
+        if tiploc not in self._centres:
+            marks = [self.chainage[n] for n in self.tiploc_nodes.get(tiploc, ()) if n in self.chainage]
+            centre = None
+            if marks:
+                regions = [r for r, _ in marks]
+                region = max(set(regions), key=regions.count)
+                km = sorted(k for r, k in marks if r == region)
+                centre = (region, km[len(km) // 2])
+            self._centres[tiploc] = centre
+        centre, mark = self._centres[tiploc], self.chainage.get(node)
+        if centre is None or mark is None or mark[0] != centre[0]:
+            return 0.0
+        return min(abs(mark[1] - centre[1]), 5000.0)
 
     def _leg(self, a, sources, b):
-        """(metres, node reached) over the network, or (straight-line metres,
-        None) as a fallback, or None."""
+        """(metres, node reached, node started from) over the network, or
+        (straight-line metres, None, None) as a fallback, or None."""
         key = (sources, b)
         if key in self._cache:
             return self._cache[key]
@@ -196,7 +253,7 @@ class Network:
                 self.suspect.append((a, b, r[0], straight))
                 r = None
         if r is None and straight is not None:
-            r = (straight, None)
+            r = (straight, None, None)
         self._cache[key] = r
         return r
 
@@ -226,10 +283,11 @@ def _is_rail_track(el):
 
 
 def _parse_tps(path):
-    """Returns ([(node_a, node_b, metres, valid_from, valid_to)], {tiploc: [node]}),
-    rail track only."""
+    """Returns ([(node_a, node_b, metres, valid_from, valid_to)], {tiploc: [node]},
+    {station node: (line reference id, metres along it)}), rail track only."""
     edges, stations = [], defaultdict(set)
     rail_nodes, other_nodes = set(), set()
+    chainage = {}
     station = in_edge = None
     track_is_rail = True
     pts, edge_attrs = [], None
@@ -273,21 +331,42 @@ def _parse_tps(path):
                 track_is_rail = True
                 el.clear()
             elif tag == "node":
+                pt = el.find("point")
+                if pt is not None:
+                    n = int(pt.get("nodeid"))
+                    if n in rail_nodes:
+                        try:
+                            chainage[n] = (int(el.get("kmregionid")), int(el.get("kmvalue")))
+                        except (TypeError, ValueError):
+                            pass
                 el.clear()
     non_rail = other_nodes - rail_nodes
     edges = [e for e in edges if e[0] not in non_rail and e[1] not in non_rail]
     print(f"  dropped {len(non_rail)} bus/ship nodes")
-    return edges, {k: sorted(v) for k, v in stations.items()}
+    return edges, {k: sorted(v) for k, v in stations.items()}, chainage
+
+
+def span(pos, legs, i, j):
+    """(metres, fraction measured on the network) between points i and j of a
+    `positions` result, or None if either wasn't reached."""
+    if pos[i] is None or pos[j] is None:
+        return None
+    total = pos[j] - pos[i]
+    measured = sum(m for a, b, m, on in legs if on and i <= a and b <= j)
+    straight = sum(m for a, b, m, on in legs if not on and i <= a and b <= j)
+    return total, (measured / (measured + straight) if measured + straight else 1.0)
 
 
 def _dijkstra(adj, sources, targets, limit):
+    """Shortest path from any source to any target: (metres, target, source) or None."""
     dist = {s: 0.0 for s in sources}
+    origin = {s: s for s in sources}
     heap = [(0.0, s) for s in sources]
     heapq.heapify(heap)
     while heap:
         d, u = heapq.heappop(heap)
         if u in targets:
-            return d, u
+            return d, u, origin[u]
         if d > limit:
             return None
         if d > dist[u]:
@@ -296,5 +375,6 @@ def _dijkstra(adj, sources, targets, limit):
             nd = d + w
             if nd < dist.get(v, math.inf):
                 dist[v] = nd
+                origin[v] = origin[u]
                 heapq.heappush(heap, (nd, v))
     return None
