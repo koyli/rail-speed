@@ -1,4 +1,7 @@
-"""Turn resolved services into speed tables: trains, routes and start-to-stop runs."""
+"""Turn resolved services into speed tables: trains and start-to-stop runs.
+
+Routes are grouped from trains in the page itself, so that its filters (calling
+point, operator) choose which trains count towards each route's best."""
 from collections import defaultdict
 
 from .network import METRES_PER_MILE
@@ -112,35 +115,7 @@ def analyse(services, net, stations):
                 cur["n"] += 1
                 if mins_ab == cur["mins"]:   # equally fast on other days too
                     cur["days"] = _union_days(cur["days"], _days(dates))
-    return trains, list(segs.values()), _routes(trains)
-
-
-def _routes(trains):
-    """Group trains by unordered origin/destination station pair; a route's
-    headline speed is its fastest service (by route miles, else crow-flies)."""
-    groups = defaultdict(list)
-    for t in trains:
-        if t["fk"] != t["tk"]:
-            groups[tuple(sorted((t["fk"], t["tk"])))].append(t)
-    routes = []
-    for g in groups.values():
-        best_r = max(g, key=lambda t: t["rmph"] or 0)
-        best_c = max(g, key=lambda t: t["cmph"] or 0)
-        fastest = min(g, key=lambda t: t["mins"])
-        days = "-------"
-        for t in g:
-            if t["rmph"] == best_r["rmph"]:
-                days = _union_days(days, t["days"])
-        routes.append({
-            "a": best_r["from"], "b": best_r["to"], "n": len(g),
-            "ops": sorted({t["op"] for t in g}),
-            "rmi": best_r["rmi"], "cmi": best_r["cmi"],
-            "rmph": best_r["rmph"], "cmph": best_c["cmph"],
-            "mins": fastest["mins"], "days": days,
-            "st": sorted({i for t in g for i in t["st"]}),   # called at by any train on the route
-            "best": {k: best_r[k] for k in ("uid", "hc", "op", "dep", "arr", "from", "to", "stops", "days")},
-        })
-    return routes
+    return trains, list(segs.values())
 
 
 def _mi(m):

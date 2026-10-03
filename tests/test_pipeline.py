@@ -52,7 +52,7 @@ class Pipeline(unittest.TestCase):
         net.load_bplan(os.path.join(FIX, "bplan.txt"), WEEK[0], {k: v[:2] for k, v in naptan.items()})
         net.add_coords(naptan)
         stns = analyse.Stations(self.tiplocs, naptan)
-        trains, segs, routes = analyse.analyse(schedule.services(self.by_uid, WEEK), net,
+        trains, segs = analyse.analyse(schedule.services(self.by_uid, WEEK), net,
                                                stns)
         gw = next(t for t in trains if t["uid"] == "G00001" and t["mins"] == 90)
         self.assertAlmostEqual(gw["rmi"], 184_800 / network.METRES_PER_MILE, places=1)
@@ -66,11 +66,6 @@ class Pipeline(unittest.TestCase):
         # KX-York has no network links: falls back to straight line, flagged.
         lner = next(t for t in trains if t["uid"] == "L00001")
         self.assertEqual(lner["q"], 0.0)
-        # Route ranking keeps the faster (permanent) GW service.
-        r = next(r for r in routes if "Bristol" in r["a"] + r["b"])
-        self.assertEqual(r["n"], 2)
-        self.assertEqual(r["mins"], 90)
-        self.assertEqual(r["days"], "MT--F--")       # the Wednesday overlay is slower
         # Start-to-stop uses working times: Reading 1025 -> Swindon 1053 over 65.7 km.
         rs = next(s for s in segs if s["from"] == "Reading" and s["to"] == "Swindon")
         self.assertEqual(rs["mins"], 28)

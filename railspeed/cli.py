@@ -50,12 +50,12 @@ def cmd_build(args):
     print(f"  {len(services)} distinct services run in the window")
 
     stations = analyse.Stations(tiplocs, naptan)
-    trains, segs, routes = analyse.analyse(services, net, stations)
+    trains, segs = analyse.analyse(services, net, stations)
     if net.suspect:
         print(f"  {len(net.suspect)} network legs rejected as shorter than the straight line, e.g. "
               + ", ".join(f"{a}-{b} {m:.0f}m vs {c:.0f}m" for a, b, m, c in net.suspect[:5]))
     measured = sum(1 for t in trains if t["q"] >= 0.99)
-    print(f"  {len(trains)} trains, {len(routes)} routes, {len(segs)} start-to-stop pairs; "
+    print(f"  {len(trains)} trains, {len(segs)} start-to-stop pairs; "
           f"{measured} trains fully measured on the network")
 
     meta = {
@@ -67,7 +67,7 @@ def cmd_build(args):
     with open(os.path.join(args.out, "data.js"), "w") as f:
         f.write("window.RAIL=")
         json.dump({"meta": meta, "stations": stations.names,
-                   "trains": trains, "routes": routes, "segs": segs},
+                   "trains": trains, "segs": segs},
                   f, separators=(",", ":"), ensure_ascii=False)
         f.write(";\n")
     shutil.copy(os.path.join(ROOT, "railspeed", "index.html"), os.path.join(args.out, "index.html"))

@@ -104,7 +104,7 @@ footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
     <p><b>Trains</b>: advertised origin departure to final arrival (public times), including stops.
     <b>Routes</b>: origin–destination pairs in either direction, ranked by their single fastest service — so the slowest route is the pair whose <em>best</em> train is slowest.
     <b>Start-to-stop</b>: fastest scheduled run between consecutive calls (working timetable, half-minutes).
-    <b>Calling at</b> matches trains that stop at the station anywhere en route, and routes with any such train.
+    <b>Calling at</b> keeps only trains that stop at the station (anywhere en route); routes are then ranked using only those trains, as they are with the operator filter.
     Route miles follow the track network through every timing point; crow flies is the straight line between the end stations.
     <span class="est">≈</span> marks distances partly estimated from straight lines.</p>
     <p>Timetable: Network Rail open data. Station locations: NaPTAN (DfT).</p>
@@ -163,6 +163,30 @@ const COLS = {
   ],
 };
 
+// Group trains into origin–destination pairs (either direction); a route's
+// headline is its fastest train by the chosen distance basis.
+function routesFrom(trains, sp) {
+  const groups = new Map();
+  for (const t of trains) {
+    if (t.fk === t.tk) continue;
+    const k = t.fk < t.tk ? t.fk + "|" + t.tk : t.tk + "|" + t.fk;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(t);
+  }
+  return [...groups.values()].map((g) => {
+    const best = g.reduce((a, b) => (b[sp] > a[sp] ? b : a));
+    let days = "-------";
+    for (const t of g)
+      if (t[sp] === best[sp]) days = [...days].map((d, i) => (d !== "-" ? d : t.days[i])).join("");
+    return {
+      a: best.from, b: best.to, best, days, n: g.length,
+      ops: [...new Set(g.map((t) => t.op))].sort(),
+      mins: Math.min(...g.map((t) => t.mins)),
+      rmi: best.rmi, cmi: best.cmi, rmph: best.rmph, cmph: best.cmph, q: best.q,
+    };
+  });
+}
+
 function render() {
   for (const g of document.querySelectorAll(".seg"))
     for (const b of g.children) b.setAttribute("aria-pressed", String(S[g.dataset.key] === b.dataset.v));
@@ -172,12 +196,16 @@ function render() {
   const op = $("op").value, q = $("q").value.trim().toLowerCase(), n = +$("n").value;
   // Stations whose name contains the search text; a row matches if it calls at any.
   const match = q ? new Set(D.stations.flatMap((name, i) => name.toLowerCase().includes(q) ? [i] : [])) : null;
-  const rows = D[S.view].filter((x) => {
-    if (x[sp] == null || x[di] == null || x[di] < minmi) return false;
-    if (op && (x.ops ? !x.ops.includes(op) : x.op !== op)) return false;
+  const keep = (x) => {
+    if (x[sp] == null || x[di] == null) return false;
+    if (op && x.op !== op) return false;
     if (match && !x.st.some((i) => match.has(i))) return false;
     return true;
-  });
+  };
+  // Routes are grouped from the trains that pass the filters, so a route's best
+  // train always calls at the chosen station and belongs to the chosen operator.
+  const base = S.view === "routes" ? routesFrom(D.trains.filter(keep), sp) : D[S.view].filter(keep);
+  const rows = base.filter((x) => x[di] >= minmi);
   rows.sort((a, b) => S.order === "desc" ? b[sp] - a[sp] : a[sp] - b[sp]);
   const pages = Math.max(1, Math.ceil(rows.length / n));
   page = Math.min(Math.max(1, page), pages);
