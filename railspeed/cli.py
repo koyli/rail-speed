@@ -55,7 +55,7 @@ def cmd_build(args):
         print(f"  {len(net.suspect)} network legs rejected as shorter than the straight line, e.g. "
               + ", ".join(f"{a}-{b} {m:.0f}m vs {c:.0f}m" for a, b, m, c in net.suspect[:5]))
     measured = sum(1 for t in trains if t["q"] >= 0.99)
-    print(f"  {len(trains)} trains, {len(segs)} start-to-stop pairs; "
+    print(f"  {len(trains)} trains, {len(segs)} start-to-stop bests (per pair and operator); "
           f"{measured} trains fully measured on the network")
 
     meta = {

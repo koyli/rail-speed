@@ -203,6 +203,22 @@ $("stationlist").innerHTML = D.stations.map((_, i) => i)
   .sort((a, b) => D.stations[a].localeCompare(D.stations[b]))
   .map((i) => `<option value="${esc(label(i))}"></option>`).join("");
 
+// Start-to-stop data holds each operator's best run per stop pair; keep the
+// best of those that pass the filters.
+function segsFrom(runs, sp) {
+  const best = new Map();
+  for (const s of runs) {
+    const k = s.st.join("|"), cur = best.get(k);
+    if (!cur) best.set(k, { ...s });
+    else {
+      cur.n += s.n;
+      if (s[sp] > cur[sp]) Object.assign(cur, { ...s, n: cur.n });
+      else if (s[sp] === cur[sp]) cur.days = [...cur.days].map((d, i) => (d !== "-" ? d : s.days[i])).join("");
+    }
+  }
+  return [...best.values()];
+}
+
 function render() {
   for (const g of document.querySelectorAll(".seg"))
     for (const b of g.children) b.setAttribute("aria-pressed", String(S[g.dataset.key] === b.dataset.v));
@@ -223,7 +239,9 @@ function render() {
   };
   // Routes are grouped from the trains that pass the filters, so a route's best
   // train always calls at the chosen station and belongs to the chosen operator.
-  const base = S.view === "routes" ? routesFrom(D.trains.filter(keep), sp) : D[S.view].filter(keep);
+  const base = S.view === "routes" ? routesFrom(D.trains.filter(keep), sp)
+    : S.view === "segs" ? segsFrom(D.segs.filter(keep), sp)
+    : D.trains.filter(keep);
   const rows = base.filter((x) => x[di] >= minmi);
   rows.sort((a, b) => S.order === "desc" ? b[sp] - a[sp] : a[sp] - b[sp]);
   const pages = Math.max(1, Math.ceil(rows.length / n));

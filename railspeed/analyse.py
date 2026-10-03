@@ -88,6 +88,8 @@ def analyse(services, net, stations):
         })
 
         # Start-to-stop runs between consecutive calls, on working (half-minute) times.
+        # The best run is kept per pair *and operator*, so the page's operator
+        # filter can still find an operator's best where another is faster.
         for a, b in zip(stops, stops[1:]):
             la, lb = locs[a], locs[b]
             t0 = la.dep if la.dep is not None else la.pub_dep
@@ -100,7 +102,7 @@ def analyse(services, net, stations):
             m, q = _span(net, locs, a, b)
             if m is None:
                 continue
-            pair = (ka, kb)
+            pair = (ka, kb, op)
             mins_ab = t1 - t0
             cur = segs.get(pair)
             if cur is None or mins_ab < cur["mins"]:
