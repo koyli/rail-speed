@@ -62,6 +62,7 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(gw["days"], "MT--F--")
         names = [stns.names[i] for i in gw["st"]]
         self.assertEqual(names, ["London Paddington", "Reading", "Swindon", "Bristol Temple Meads"])
+        self.assertEqual(gw["t"], [0, 0, 23, 25, 53, 54, 90, 90])
         self.assertTrue(103 < gw["cmi"] < 105)        # Paddington-Bristol TM ~104 mi crow
         # KX-York has no network links: falls back to straight line, flagged.
         lner = next(t for t in trains if t["uid"] == "L00001")
@@ -70,6 +71,7 @@ class Pipeline(unittest.TestCase):
         rs = next(s for s in segs if s["from"] == "Reading" and s["to"] == "Swindon")
         self.assertEqual(rs["mins"], 28)
         self.assertEqual(rs["days"], "MT--F--")
+        self.assertEqual(trains[rs["ti"]]["uid"], "G00001")
 
     def test_tps_bus_and_ship_tracks_are_not_rail(self):
         import xml.etree.ElementTree as ET

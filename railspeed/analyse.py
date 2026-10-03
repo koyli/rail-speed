@@ -85,6 +85,10 @@ def analyse(services, net, stations):
             "rmph": _mph(route_m, mins), "cmph": _mph(crow_m, mins),
             "days": _days(dates), "pw": sched.power,
             "st": [stations.index(locs[i].tiploc) for i in stops if o <= i <= d],
+            # Public arrival and departure at each of those stops, in minutes after
+            # the origin departure, flattened: [arr0, dep0, arr1, dep1, ...].
+            "t": [int(round(x - locs[o].pub_dep)) for i in stops if o <= i <= d
+                  for x in _arr_dep(locs[i])],
         })
 
         # Start-to-stop runs between consecutive calls, on working (half-minute) times.
@@ -113,6 +117,7 @@ def analyse(services, net, stations):
                     "cmph": _mph(net.crow_m(la.tiploc, lb.tiploc), mins_ab),
                     "uid": sched.uid, "hc": sched.headcode, "op": op, "dep": _hhmm(t0),
                     "days": _days(dates), "n": (cur["n"] if cur else 0) + 1,
+                    "ti": len(trains) - 1,   # the train making this run
                     "st": [stations.index(la.tiploc), stations.index(lb.tiploc)],
                 }
             else:
@@ -134,6 +139,12 @@ def _hhmm(t):
     half = "½" if t % 1 else ""
     t = int(t) % 1440
     return f"{t // 60:02d}:{t % 60:02d}{half}"
+
+
+def _arr_dep(loc):
+    arr = loc.pub_arr if loc.pub_arr is not None else loc.pub_dep
+    dep = loc.pub_dep if loc.pub_dep is not None else loc.pub_arr
+    return arr, dep
 
 
 def _union_days(a, b):
