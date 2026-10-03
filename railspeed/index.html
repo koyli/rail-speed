@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rail Speed League</title>
+<style>
+:root {
+  --bg: #f7f6f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1da;
+  --accent: #c8102e; --accent-ink: #ffffff; --bar: #c8102e33; --warn-bg: #fff4d6; --warn-ink: #6b4e00;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141413; --panel: #1e1e1c; --ink: #ecebe6; --muted: #9a9890; --line: #33322e;
+    --accent: #ff4d5e; --accent-ink: #141413; --bar: #ff4d5e33; --warn-bg: #3a2f10; --warn-ink: #f3d68a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+.warn { background: var(--warn-bg); color: var(--warn-ink); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+.controls label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 7px 12px; font: inherit; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+select, input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; }
+input[type=number] { width: 80px; }
+.tablewrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.rank { color: var(--muted); width: 1%; }
+td.speed { font-weight: 650; position: relative; min-width: 110px; }
+td.speed span { position: relative; }
+td.speed::before { content: ""; position: absolute; inset: 6px auto 6px 0; width: var(--w); background: var(--bar); border-radius: 3px; }
+.mono { font-family: var(--mono); font-size: 13px; }
+.est { color: var(--muted); font-size: 12px; }
+.small { color: var(--muted); font-size: 12px; }
+tr:last-child td { border-bottom: 0; }
+footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Rail Speed League</h1>
+  <p class="sub" id="sub"></p>
+  <div class="warn" id="warn" hidden></div>
+
+  <div class="controls">
+    <label>View
+      <div class="seg" data-key="view">
+        <button data-v="trains">Trains end-to-end</button>
+        <button data-v="routes">Routes</button>
+        <button data-v="segs">Start-to-stop</button>
+      </div>
+    </label>
+    <label>Order
+      <div class="seg" data-key="order">
+        <button data-v="desc">Fastest</button>
+        <button data-v="asc">Slowest</button>
+      </div>
+    </label>
+    <label>Distance
+      <div class="seg" data-key="basis">
+        <button data-v="r">Route miles</button>
+        <button data-v="c">Crow flies</button>
+      </div>
+    </label>
+    <label>Min miles <input type="number" id="minmi" min="0" step="1"></label>
+    <label>Operator <select id="op"><option value="">All</option></select></label>
+    <label>Station <input type="search" id="q" placeholder="e.g. York"></label>
+    <label>Show
+      <select id="n"><option>10</option><option>25</option><option selected>50</option><option>100</option><option>500</option></select>
+    </label>
+  </div>
+
+  <div class="tablewrap"><table id="t"></table></div>
+  <p class="small" id="count"></p>
+
+  <footer>
+    <p><b>Trains</b>: advertised origin departure to final arrival (public times), including stops.
+    <b>Routes</b>: origin–destination pairs in either direction, ranked by their single fastest service — so the slowest route is the pair whose <em>best</em> train is slowest.
+    <b>Start-to-stop</b>: fastest scheduled run between consecutive calls (working timetable, half-minutes).
+    Route miles follow the track network through every timing point; crow flies is the straight line between the end stations.
+    <span class="est">≈</span> marks distances partly estimated from straight lines.</p>
+    <p>Timetable: Network Rail open data. Station locations: NaPTAN (DfT).</p>
+  </footer>
+</main>
+<script src="data.js"></script>
+<script>
+const D = window.RAIL;
+const S = { view: "trains", order: "desc", basis: "r", minmi: null };
+const MIN_DEFAULT = { trains: 10, routes: 10, segs: 2 };
+const $ = (id) => document.getElementById(id);
+const opName = (c) => D.meta.operators[c] || c;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const dur = (m) => { m = Math.round(m * 2) / 2; const h = Math.floor(m / 60), r = m - h * 60; return (h ? h + "h " : "") + (r % 1 ? Math.floor(r) + "½" : r) + "m"; };
+const mi = (v, q) => v == null ? "–" : v.toFixed(1) + (q != null && q < 0.99 ? ' <span class="est" title="partly estimated">≈</span>' : "");
+
+try { const saved = JSON.parse(localStorage.getItem("railspeed") || "{}"); Object.assign(S, saved); } catch (e) {}
+
+const ops = [...new Set(D.trains.map((t) => t.op))].sort((a, b) => opName(a).localeCompare(opName(b)));
+for (const o of ops) $("op").insertAdjacentHTML("beforeend", `<option value="${esc(o)}">${esc(opName(o))}</option>`);
+
+const meta = D.meta;
+$("sub").textContent = `${D.trains.length.toLocaleString()} passenger services timetabled ${meta.from} to ${meta.to}. Built ${meta.built.replace("T", " ")}.`;
+if (!meta.network) {
+  $("warn").hidden = false;
+  $("warn").textContent = "No track network model was loaded, so route miles are estimated by joining calling points with straight lines (typically a few percent short). Crow-flies figures are exact.";
+}
+
+const COLS = {
+  trains: [
+    ["#", (t, i) => i + 1, "rank"],
+    ["Speed", null, "speed num"],
+    ["Train", (t) => `<span class="mono">${esc(t.hc)}</span> <span class="small">${esc(t.uid)}</span>`],
+    ["From", (t) => esc(t.from)], ["Dep", (t) => `<span class="mono">${t.dep}</span>`],
+    ["To", (t) => esc(t.to)], ["Arr", (t) => `<span class="mono">${t.arr}</span>`],
+    ["Time", (t) => dur(t.mins), "num"], ["Miles", null, "num"], ["Stops", (t) => t.stops, "num"],
+    ["Operator", (t) => esc(opName(t.op))], ["Days", (t) => `<span class="mono">${t.days}</span>`],
+  ],
+  routes: [
+    ["#", (r, i) => i + 1, "rank"],
+    ["Best speed", null, "speed num"],
+    ["Route", (r) => `${esc(r.a)} – ${esc(r.b)}`],
+    ["Miles", null, "num"], ["Fastest time", (r) => dur(r.mins), "num"],
+    ["Best train", (r) => `<span class="mono">${esc(r.best.hc)}</span> ${r.best.dep} ${esc(r.best.from)} → ${esc(r.best.to)}`],
+    ["Trains", (r) => r.n, "num"], ["Operators", (r) => esc(r.ops.map(opName).join(", "))],
+  ],
+  segs: [
+    ["#", (s, i) => i + 1, "rank"],
+    ["Speed", null, "speed num"],
+    ["From", (s) => esc(s.from)], ["To", (s) => esc(s.to)],
+    ["Time", (s) => dur(s.mins), "num"], ["Miles", null, "num"],
+    ["Train", (s) => `<span class="mono">${esc(s.hc)}</span> dep ${s.dep}`],
+    ["Operator", (s) => esc(opName(s.op))], ["Trains on pair", (s) => s.n, "num"],
+  ],
+};
+
+function render() {
+  for (const g of document.querySelectorAll(".seg"))
+    for (const b of g.children) b.setAttribute("aria-pressed", String(S[g.dataset.key] === b.dataset.v));
+  const minmi = S.minmi ?? MIN_DEFAULT[S.view];
+  $("minmi").value = minmi;
+  const sp = S.basis + "mph", di = S.basis + "mi";
+  const op = $("op").value, q = $("q").value.trim().toLowerCase(), n = +$("n").value;
+  const rows = D[S.view].filter((x) => {
+    if (x[sp] == null || x[di] == null || x[di] < minmi) return false;
+    if (op && (x.ops ? !x.ops.includes(op) : x.op !== op)) return false;
+    if (q) { const s = (x.from || x.a) + " " + (x.to || x.b); if (!s.toLowerCase().includes(q)) return false; }
+    return true;
+  });
+  rows.sort((a, b) => S.order === "desc" ? b[sp] - a[sp] : a[sp] - b[sp]);
+  const shown = rows.slice(0, n);
+  const max = Math.max(...shown.map((x) => x[sp]), 1);
+  const cols = COLS[S.view];
+  let h = "<thead><tr>" + cols.map(([l, , c]) => `<th class="${c || ""}">${l}${l.includes("peed") ? " (mph)" : ""}</th>`).join("") + "</tr></thead><tbody>";
+  shown.forEach((x, i) => {
+    h += "<tr>" + cols.map(([l, f, c]) => {
+      let v;
+      if (l.includes("peed")) return `<td class="${c}" style="--w:${(x[sp] / max * 100).toFixed(1)}%"><span>${x[sp].toFixed(1)}</span></td>`;
+      if (l === "Miles") v = mi(x[di], S.basis === "r" ? x.q : null);
+      else v = f(x, i);
+      return `<td class="${c || ""}">${v}</td>`;
+    }).join("") + "</tr>";
+  });
+  $("t").innerHTML = h + "</tbody>";
+  $("count").textContent = `Showing ${shown.length} of ${rows.length.toLocaleString()} matching.`;
+  try { localStorage.setItem("railspeed", JSON.stringify(S)); } catch (e) {}
+}
+
+for (const g of document.querySelectorAll(".seg"))
+  g.addEventListener("click", (e) => {
+    const v = e.target.dataset.v; if (!v) return;
+    if (g.dataset.key === "view" && v !== S.view) S.minmi = null;
+    S[g.dataset.key] = v; render();
+  });
+$("minmi").addEventListener("input", (e) => { S.minmi = e.target.value === "" ? null : +e.target.value; render(); });
+for (const id of ["op", "q", "n"]) $(id).addEventListener("input", render);
+render();
+</script>
+</body>
+</html>
