@@ -21,6 +21,15 @@ class Stations:
 
     def __init__(self, tiplocs, naptan):
         self.tiplocs, self.naptan = tiplocs, naptan
+        self.names, self._index = [], {}   # compact station table for the page
+
+    def index(self, tiploc):
+        """Position of this station in `names`, adding it if new."""
+        k = self.key(tiploc)
+        if k not in self._index:
+            self._index[k] = len(self.names)
+            self.names.append(self.name(tiploc))
+        return self._index[k]
 
     def key(self, tiploc):
         t = self.tiplocs.get(tiploc)
@@ -70,6 +79,7 @@ def analyse(services, net, stations):
             "rmi": _mi(route_m), "cmi": _mi(crow_m), "q": round(quality, 2),
             "rmph": _mph(route_m, mins), "cmph": _mph(crow_m, mins),
             "days": _days(dates), "pw": sched.power,
+            "st": [stations.index(locs[i].tiploc) for i in stops if o <= i <= d],
         })
 
         # Start-to-stop runs between consecutive calls, on working (half-minute) times.
@@ -95,10 +105,13 @@ def analyse(services, net, stations):
                     "cmi": _mi(net.crow_m(la.tiploc, lb.tiploc)),
                     "cmph": _mph(net.crow_m(la.tiploc, lb.tiploc), mins_ab),
                     "uid": sched.uid, "hc": sched.headcode, "op": op, "dep": _hhmm(t0),
-                    "n": (cur["n"] if cur else 0) + 1,
+                    "days": _days(dates), "n": (cur["n"] if cur else 0) + 1,
+                    "st": [stations.index(la.tiploc), stations.index(lb.tiploc)],
                 }
             else:
                 cur["n"] += 1
+                if mins_ab == cur["mins"]:   # equally fast on other days too
+                    cur["days"] = _union_days(cur["days"], _days(dates))
     return trains, list(segs.values()), _routes(trains)
 
 
@@ -114,12 +127,17 @@ def _routes(trains):
         best_r = max(g, key=lambda t: t["rmph"] or 0)
         best_c = max(g, key=lambda t: t["cmph"] or 0)
         fastest = min(g, key=lambda t: t["mins"])
+        days = "-------"
+        for t in g:
+            if t["rmph"] == best_r["rmph"]:
+                days = _union_days(days, t["days"])
         routes.append({
             "a": best_r["from"], "b": best_r["to"], "n": len(g),
             "ops": sorted({t["op"] for t in g}),
             "rmi": best_r["rmi"], "cmi": best_r["cmi"],
             "rmph": best_r["rmph"], "cmph": best_c["cmph"],
-            "mins": fastest["mins"],
+            "mins": fastest["mins"], "days": days,
+            "st": sorted({i for t in g for i in t["st"]}),   # called at by any train on the route
             "best": {k: best_r[k] for k in ("uid", "hc", "op", "dep", "arr", "from", "to", "stops", "days")},
         })
     return routes
@@ -137,6 +155,10 @@ def _hhmm(t):
     half = "½" if t % 1 else ""
     t = int(t) % 1440
     return f"{t // 60:02d}:{t % 60:02d}{half}"
+
+
+def _union_days(a, b):
+    return "".join(x if x != "-" else y for x, y in zip(a, b))
 
 
 def _days(dates):

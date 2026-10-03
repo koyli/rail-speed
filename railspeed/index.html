@@ -45,6 +45,12 @@ td.speed::before { content: ""; position: absolute; inset: 6px auto 6px 0; width
 .est { color: var(--muted); font-size: 12px; }
 .small { color: var(--muted); font-size: 12px; }
 tr:last-child td { border-bottom: 0; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 12px 0 0; }
+.pager .btns { display: flex; align-items: center; gap: 6px; }
+.pager button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 11px; cursor: pointer; }
+.pager button:disabled { opacity: 0.4; cursor: default; }
+.pager input { width: 64px; text-align: center; }
 footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
 </style>
 </head>
@@ -76,19 +82,29 @@ footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
     </label>
     <label>Min miles <input type="number" id="minmi" min="0" step="1"></label>
     <label>Operator <select id="op"><option value="">All</option></select></label>
-    <label>Station <input type="search" id="q" placeholder="e.g. York"></label>
-    <label>Show
+    <label>Calling at <input type="search" id="q" placeholder="e.g. York"></label>
+    <label>Per page
       <select id="n"><option>10</option><option>25</option><option selected>50</option><option>100</option><option>500</option></select>
     </label>
   </div>
 
   <div class="tablewrap"><table id="t"></table></div>
-  <p class="small" id="count"></p>
+  <nav class="pager" aria-label="Results pages">
+    <span class="small" id="count"></span>
+    <span class="btns">
+      <button id="first" aria-label="First page">«</button>
+      <button id="prev" aria-label="Previous page">‹ Prev</button>
+      <span class="small">Page <input type="number" id="page" min="1" step="1" aria-label="Page number"> of <span id="pages"></span></span>
+      <button id="next" aria-label="Next page">Next ›</button>
+      <button id="last" aria-label="Last page">»</button>
+    </span>
+  </nav>
 
   <footer>
     <p><b>Trains</b>: advertised origin departure to final arrival (public times), including stops.
     <b>Routes</b>: origin–destination pairs in either direction, ranked by their single fastest service — so the slowest route is the pair whose <em>best</em> train is slowest.
     <b>Start-to-stop</b>: fastest scheduled run between consecutive calls (working timetable, half-minutes).
+    <b>Calling at</b> matches trains that stop at the station anywhere en route, and routes with any such train.
     Route miles follow the track network through every timing point; crow flies is the straight line between the end stations.
     <span class="est">≈</span> marks distances partly estimated from straight lines.</p>
     <p>Timetable: Network Rail open data. Station locations: NaPTAN (DfT).</p>
@@ -98,6 +114,7 @@ footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
 <script>
 const D = window.RAIL;
 const S = { view: "trains", order: "desc", basis: "r", minmi: null };
+let page = 1;   // not persisted: a reload starts at the top of the rankings
 const $ = (id) => document.getElementById(id);
 const opName = (c) => D.meta.operators[c] || c;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -132,6 +149,7 @@ const COLS = {
     ["Route", (r) => `${esc(r.a)} – ${esc(r.b)}`],
     ["Miles", null, "num"], ["Fastest time", (r) => dur(r.mins), "num"],
     ["Best train", (r) => `<span class="mono">${esc(r.best.hc)}</span> ${r.best.dep} ${esc(r.best.from)} → ${esc(r.best.to)}`],
+    ["Days", (r) => `<span class="mono" title="Days the best speed is available">${r.days}</span>`],
     ["Trains", (r) => r.n, "num"], ["Operators", (r) => esc(r.ops.map(opName).join(", "))],
   ],
   segs: [
@@ -140,6 +158,7 @@ const COLS = {
     ["From", (s) => esc(s.from)], ["To", (s) => esc(s.to)],
     ["Time", (s) => dur(s.mins), "num"], ["Miles", null, "num"],
     ["Train", (s) => `<span class="mono">${esc(s.hc)}</span> dep ${s.dep}`],
+    ["Days", (s) => `<span class="mono" title="Days the fastest time is available">${s.days}</span>`],
     ["Operator", (s) => esc(opName(s.op))], ["Trains on pair", (s) => s.n, "num"],
   ],
 };
@@ -151,15 +170,21 @@ function render() {
   $("minmi").value = minmi;
   const sp = S.basis + "mph", di = S.basis + "mi";
   const op = $("op").value, q = $("q").value.trim().toLowerCase(), n = +$("n").value;
+  // Stations whose name contains the search text; a row matches if it calls at any.
+  const match = q ? new Set(D.stations.flatMap((name, i) => name.toLowerCase().includes(q) ? [i] : [])) : null;
   const rows = D[S.view].filter((x) => {
     if (x[sp] == null || x[di] == null || x[di] < minmi) return false;
     if (op && (x.ops ? !x.ops.includes(op) : x.op !== op)) return false;
-    if (q) { const s = (x.from || x.a) + " " + (x.to || x.b); if (!s.toLowerCase().includes(q)) return false; }
+    if (match && !x.st.some((i) => match.has(i))) return false;
     return true;
   });
   rows.sort((a, b) => S.order === "desc" ? b[sp] - a[sp] : a[sp] - b[sp]);
-  const shown = rows.slice(0, n);
-  const max = Math.max(...shown.map((x) => x[sp]), 1);
+  const pages = Math.max(1, Math.ceil(rows.length / n));
+  page = Math.min(Math.max(1, page), pages);
+  const offset = (page - 1) * n;
+  const shown = rows.slice(offset, offset + n);
+  // Bars scale to the fastest matching row, so they compare across pages.
+  const max = rows.reduce((m, x) => Math.max(m, x[sp]), 1);
   const cols = COLS[S.view];
   let h = "<thead><tr>" + cols.map(([l, , c]) => `<th class="${c || ""}">${l}${l.includes("peed") ? " (mph)" : ""}</th>`).join("") + "</tr></thead><tbody>";
   shown.forEach((x, i) => {
@@ -167,12 +192,17 @@ function render() {
       let v;
       if (l.includes("peed")) return `<td class="${c}" style="--w:${(x[sp] / max * 100).toFixed(1)}%"><span>${x[sp].toFixed(1)}</span></td>`;
       if (l === "Miles") v = mi(x[di], S.basis === "r" ? x.q : null);
-      else v = f(x, i);
+      else v = f(x, offset + i);
       return `<td class="${c || ""}">${v}</td>`;
     }).join("") + "</tr>";
   });
   $("t").innerHTML = h + "</tbody>";
-  $("count").textContent = `Showing ${shown.length} of ${rows.length.toLocaleString()} matching.`;
+  $("count").textContent = rows.length
+    ? `${(offset + 1).toLocaleString()}–${(offset + shown.length).toLocaleString()} of ${rows.length.toLocaleString()} matching`
+    : "No matches";
+  $("page").value = page; $("page").max = pages; $("pages").textContent = pages.toLocaleString();
+  $("first").disabled = $("prev").disabled = page <= 1;
+  $("next").disabled = $("last").disabled = page >= pages;
   try { localStorage.setItem("railspeed", JSON.stringify(S)); } catch (e) {}
 }
 
@@ -180,10 +210,20 @@ for (const g of document.querySelectorAll(".seg"))
   g.addEventListener("click", (e) => {
     const v = e.target.dataset.v; if (!v) return;
     if (g.dataset.key === "view" && v !== S.view) S.minmi = null;
-    S[g.dataset.key] = v; render();
+    S[g.dataset.key] = v; page = 1; render();
   });
-$("minmi").addEventListener("input", (e) => { S.minmi = e.target.value === "" ? null : +e.target.value; render(); });
-for (const id of ["op", "q", "n"]) $(id).addEventListener("input", render);
+$("minmi").addEventListener("input", (e) => { S.minmi = e.target.value === "" ? null : +e.target.value; page = 1; render(); });
+for (const id of ["op", "q", "n"]) $(id).addEventListener("input", () => { page = 1; render(); });
+function goTo(p) {
+  page = p; render();
+  const top = $("t").getBoundingClientRect().top;
+  if (top < 0) $("t").scrollIntoView({ block: "start" });
+}
+$("first").addEventListener("click", () => goTo(1));
+$("prev").addEventListener("click", () => goTo(page - 1));
+$("next").addEventListener("click", () => goTo(page + 1));
+$("last").addEventListener("click", () => goTo(Infinity));
+$("page").addEventListener("change", (e) => goTo(Math.floor(+e.target.value) || 1));
 render();
 </script>
 </body>

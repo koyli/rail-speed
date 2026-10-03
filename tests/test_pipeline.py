@@ -51,14 +51,17 @@ class Pipeline(unittest.TestCase):
         net = network.Network()
         net.load_bplan(os.path.join(FIX, "bplan.txt"), WEEK[0], {k: v[:2] for k, v in naptan.items()})
         net.add_coords(naptan)
+        stns = analyse.Stations(self.tiplocs, naptan)
         trains, segs, routes = analyse.analyse(schedule.services(self.by_uid, WEEK), net,
-                                               analyse.Stations(self.tiplocs, naptan))
+                                               stns)
         gw = next(t for t in trains if t["uid"] == "G00001" and t["mins"] == 90)
         self.assertAlmostEqual(gw["rmi"], 184_800 / network.METRES_PER_MILE, places=1)
         self.assertEqual(gw["q"], 1.0)
         self.assertAlmostEqual(gw["rmph"], 76.6, places=1)
         self.assertEqual(gw["stops"], 2)              # Didcot is a pass, not a stop
         self.assertEqual(gw["days"], "MT--F--")
+        names = [stns.names[i] for i in gw["st"]]
+        self.assertEqual(names, ["London Paddington", "Reading", "Swindon", "Bristol Temple Meads"])
         self.assertTrue(103 < gw["cmi"] < 105)        # Paddington-Bristol TM ~104 mi crow
         # KX-York has no network links: falls back to straight line, flagged.
         lner = next(t for t in trains if t["uid"] == "L00001")
@@ -67,9 +70,11 @@ class Pipeline(unittest.TestCase):
         r = next(r for r in routes if "Bristol" in r["a"] + r["b"])
         self.assertEqual(r["n"], 2)
         self.assertEqual(r["mins"], 90)
+        self.assertEqual(r["days"], "MT--F--")       # the Wednesday overlay is slower
         # Start-to-stop uses working times: Reading 1025 -> Swindon 1053 over 65.7 km.
         rs = next(s for s in segs if s["from"] == "Reading" and s["to"] == "Swindon")
         self.assertEqual(rs["mins"], 28)
+        self.assertEqual(rs["days"], "MT--F--")
 
     def test_tps_bus_and_ship_tracks_are_not_rail(self):
         import xml.etree.ElementTree as ET
