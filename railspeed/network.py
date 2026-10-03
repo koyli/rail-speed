@@ -55,6 +55,7 @@ class Network:
         self.tiploc_nodes = {}         # tiploc -> nodes it owns (TPS); BPLAN nodes are tiplocs
         self.coords = {}               # tiploc -> (e, n)
         self._cache = {}
+        self.suspect = []              # (a, b, network m, straight m) legs rejected as impossible
 
     @property
     def has_links(self):
@@ -108,7 +109,7 @@ class Network:
 
     def load_tps(self, path, on_date):
         """Load the TPS network model (tar.bz2 of XML_p.xml), via a pickle cache."""
-        cache = path + ".graph.pickle"
+        cache = path + ".graph.v3.pickle"  # bump when the parse changes
         if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(path):
             with open(cache, "rb") as f:
                 edges, stations = pickle.load(f)
@@ -189,6 +190,11 @@ class Network:
             # consecutive timing points are seldom more than ~100 km apart.
             limit = 3 * straight + 10_000 if straight is not None else 150_000
             r = _dijkstra(self.adj, sources, set(dst), limit)
+            # Track can't be shorter than the straight line (allowing for the
+            # spread of a station's nodes): if it is, the graph has a bogus link.
+            if r is not None and straight is not None and r[0] < straight - 1500:
+                self.suspect.append((a, b, r[0], straight))
+                r = None
         if r is None and straight is not None:
             r = (straight, None)
         self._cache[key] = r
@@ -206,10 +212,26 @@ def _expired(end_field, on_date):
         return False
 
 
+NON_RAIL_TRACKS = {"BUS", "SHIP", "SHP"}
+
+
+def _is_rail_track(el):
+    """The TPS model also holds a schematic network for rail-replacement buses
+    and ships: tracks named/described BUS or SHIP, joining stations with nominal
+    100 m edges. Routing over them would let a train "take the bus" from
+    Chelmsford to Shenfield. (Their category, 3 "Non-Conventional", also covers
+    some real track, so it can't be used.)"""
+    return (el.get("name", "").strip().upper() not in NON_RAIL_TRACKS
+            and el.get("description", "").strip().upper() not in NON_RAIL_TRACKS)
+
+
 def _parse_tps(path):
-    """Returns ([(node_a, node_b, metres, valid_from, valid_to)], {tiploc: [node]})."""
-    edges, stations = [], defaultdict(list)
+    """Returns ([(node_a, node_b, metres, valid_from, valid_to)], {tiploc: [node]}),
+    rail track only."""
+    edges, stations = [], defaultdict(set)
+    rail_nodes, other_nodes = set(), set()
     station = in_edge = None
+    track_is_rail = True
     pts, edge_attrs = [], None
     with tarfile.open(path, "r:*") as tar:
         member = next(m for m in tar if m.name.lower().endswith(".xml"))
@@ -218,14 +240,21 @@ def _parse_tps(path):
             if event == "start":
                 if tag == "station":
                     station = el.get("abbrev", "").strip()
+                elif tag == "track":
+                    track_is_rail = _is_rail_track(el)
                 elif tag == "edge":
                     in_edge, pts, edge_attrs = True, [], dict(el.attrib)
                 continue
             if tag == "point":
+                node = int(el.get("nodeid"))
                 if in_edge:
-                    pts.append(int(el.get("nodeid")))
+                    pts.append(node)
                 elif station:
-                    stations[station].append(int(el.get("nodeid")))
+                    if track_is_rail:
+                        rail_nodes.add(node)
+                        stations[station].add(node)
+                    else:
+                        other_nodes.add(node)
             elif tag == "edge":
                 if len(pts) >= 2:
                     try:
@@ -240,9 +269,15 @@ def _parse_tps(path):
             elif tag == "station":
                 station = None
                 el.clear()
-            elif tag in ("node", "track"):
+            elif tag == "track":
+                track_is_rail = True
                 el.clear()
-    return edges, {k: sorted(set(v)) for k, v in stations.items()}
+            elif tag == "node":
+                el.clear()
+    non_rail = other_nodes - rail_nodes
+    edges = [e for e in edges if e[0] not in non_rail and e[1] not in non_rail]
+    print(f"  dropped {len(non_rail)} bus/ship nodes")
+    return edges, {k: sorted(v) for k, v in stations.items()}
 
 
 def _dijkstra(adj, sources, targets, limit):

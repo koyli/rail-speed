@@ -71,6 +71,22 @@ class Pipeline(unittest.TestCase):
         rs = next(s for s in segs if s["from"] == "Reading" and s["to"] == "Swindon")
         self.assertEqual(rs["mins"], 28)
 
+    def test_tps_bus_and_ship_tracks_are_not_rail(self):
+        import xml.etree.ElementTree as ET
+        track = lambda **a: ET.Element("track", {k: str(v) for k, v in a.items()})
+        self.assertFalse(network._is_rail_track(track(name="BUS", description="BUS", trackcategory=3)))
+        self.assertFalse(network._is_rail_track(track(name="", description="Bus", trackcategory=3)))
+        self.assertFalse(network._is_rail_track(track(name="SHP", description="SHIP", trackcategory=3)))
+        # Category 3 also covers real track.
+        self.assertTrue(network._is_rail_track(track(name="DM", description="Down Main", trackcategory=3)))
+
+    def test_route_rejects_shortcut_shorter_than_crow_flies(self):
+        net = network.Network()
+        net.add_coords({"A": (0, 0), "B": (20_000, 0)})
+        net.add_link("A", "B", 100)   # bogus 100 m link between stations 20 km apart
+        self.assertEqual(net.route_m(["A", "B"]), (20_000, 0.0))
+        self.assertEqual(len(net.suspect), 1)
+
     def test_build_writes_site(self):
         with tempfile.TemporaryDirectory() as out:
             cli.main(["build", "--date", "2026-10-05", "--schedule", os.path.join(FIX, "schedule.json"),

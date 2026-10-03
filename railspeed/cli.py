@@ -50,6 +50,9 @@ def cmd_build(args):
     print(f"  {len(services)} distinct services run in the window")
 
     trains, segs, routes = analyse.analyse(services, net, analyse.Stations(tiplocs, naptan))
+    if net.suspect:
+        print(f"  {len(net.suspect)} network legs rejected as shorter than the straight line, e.g. "
+              + ", ".join(f"{a}-{b} {m:.0f}m vs {c:.0f}m" for a, b, m, c in net.suspect[:5]))
     measured = sum(1 for t in trains if t["q"] >= 0.99)
     print(f"  {len(trains)} trains, {len(routes)} routes, {len(segs)} start-to-stop pairs; "
           f"{measured} trains fully measured on the network")
