@@ -48,11 +48,8 @@ python3 -m unittest                       # tests on a synthetic fixture
 
 ## Publishing
 
-The page is served by GitHub Pages from `site/`. `.github/workflows/pages.yml`
-deploys it on every push to `main`. The raw data stays local (`data/` is
-gitignored), so to update the page:
-
-```sh
-python3 -m railspeed fetch schedule && python3 -m railspeed build
-git add site && git commit -m "Rebuild for week of ..." && git push
-```
+GitHub Pages serves the page at https://koyli.github.io/rail-speed/.
+`.github/workflows/pages.yml` fetches fresh data, runs the tests, builds and
+deploys every Saturday at 06:00 UTC, on every push to `main`, and on demand
+(Actions tab → Pages → Run workflow). It needs repository secrets `NROD_USER`
+and `NROD_PASS`. Nothing generated is committed: `data/` and `site/` are gitignored.
