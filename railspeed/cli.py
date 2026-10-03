@@ -66,7 +66,7 @@ def cmd_build(args):
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "data.js"), "w") as f:
         f.write("window.RAIL=")
-        json.dump({"meta": meta, "stations": stations.names,
+        json.dump({"meta": meta, "stations": stations.names, "codes": stations.codes,
                    "trains": trains, "segs": segs},
                   f, separators=(",", ":"), ensure_ascii=False)
         f.write(";\n")

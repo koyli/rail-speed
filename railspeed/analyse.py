@@ -24,7 +24,7 @@ class Stations:
 
     def __init__(self, tiplocs, naptan):
         self.tiplocs, self.naptan = tiplocs, naptan
-        self.names, self._index = [], {}   # compact station table for the page
+        self.names, self.codes, self._index = [], [], {}   # compact station table for the page
 
     def index(self, tiploc):
         """Position of this station in `names`, adding it if new."""
@@ -32,6 +32,8 @@ class Stations:
         if k not in self._index:
             self._index[k] = len(self.names)
             self.names.append(self.name(tiploc))
+            t = self.tiplocs.get(tiploc)
+            self.codes.append(t.crs if t and t.crs else "")
         return self._index[k]
 
     def key(self, tiploc):

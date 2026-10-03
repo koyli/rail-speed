@@ -82,7 +82,8 @@ footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
     </label>
     <label>Min miles <input type="number" id="minmi" min="0" step="1"></label>
     <label>Operator <select id="op"><option value="">All</option></select></label>
-    <label>Stopping at <input type="search" id="q" placeholder="e.g. York"></label>
+    <label>Stopping at <input type="search" id="q" list="stationlist" placeholder="Station or code, e.g. OXF" autocomplete="off"></label>
+    <datalist id="stationlist"></datalist>
     <label>Per page
       <select id="n"><option>10</option><option>25</option><option selected>50</option><option>100</option><option>500</option></select>
     </label>
@@ -104,7 +105,7 @@ footer { color: var(--muted); font-size: 13px; margin-top: 20px; }
     <p><b>Trains</b>: advertised origin departure to final arrival (public times), including stops.
     <b>Routes</b>: origin–destination pairs in either direction, ranked by their single fastest service — so the slowest route is the pair whose <em>best</em> train is slowest.
     <b>Start-to-stop</b>: fastest scheduled run between consecutive calls (working timetable, half-minutes).
-    <b>Stopping at</b> keeps only trains that stop at the station (anywhere en route); routes are then ranked using only those trains, as they are with the operator filter.
+    <b>Stopping at</b> (full station name or three-letter code) keeps only trains that stop at the station (anywhere en route); routes are then ranked using only those trains, as they are with the operator filter.
     Route miles follow the track network through every timing point; crow flies is the straight line between the end stations.
     <span class="est">≈</span> marks distances partly estimated from straight lines.</p>
     <p>Timetable: Network Rail open data. Station locations: NaPTAN (DfT).</p>
@@ -187,6 +188,21 @@ function routesFrom(trains, sp) {
   });
 }
 
+const label = (i) => D.codes[i] ? `${D.stations[i]} (${D.codes[i]})` : D.stations[i];
+const byText = new Map();
+D.stations.forEach((name, i) => {
+  for (const text of [name, D.codes[i], label(i)]) {
+    if (!text) continue;
+    const k = text.toLowerCase();
+    if (!byText.has(k)) byText.set(k, new Set());
+    byText.get(k).add(i);
+  }
+});
+function stationMatch(q) { return byText.get(q) || new Set(); }
+$("stationlist").innerHTML = D.stations.map((_, i) => i)
+  .sort((a, b) => D.stations[a].localeCompare(D.stations[b]))
+  .map((i) => `<option value="${esc(label(i))}"></option>`).join("");
+
 function render() {
   for (const g of document.querySelectorAll(".seg"))
     for (const b of g.children) b.setAttribute("aria-pressed", String(S[g.dataset.key] === b.dataset.v));
@@ -195,8 +211,10 @@ function render() {
   if (document.activeElement !== $("minmi")) $("minmi").value = minmi;
   const sp = S.basis + "mph", di = S.basis + "mi";
   const op = $("op").value, q = $("q").value.trim().toLowerCase(), n = +$("n").value;
-  // Stations whose name contains the search text; a row matches if it calls at any.
-  const match = q ? new Set(D.stations.flatMap((name, i) => name.toLowerCase().includes(q) ? [i] : [])) : null;
+  // Exact station name, CRS code, or "Name (CRS)" as offered by the list; a
+  // row matches if it calls there. Substrings would let "Oxford" match
+  // "Manchester Oxford Road".
+  const match = q ? stationMatch(q) : null;
   const keep = (x) => {
     if (x[sp] == null || x[di] == null) return false;
     if (op && x.op !== op) return false;
@@ -226,8 +244,8 @@ function render() {
     }).join("") + "</tr>";
   });
   $("t").innerHTML = h + "</tbody>";
-  $("count").textContent = rows.length
-    ? `${(offset + 1).toLocaleString()}–${(offset + shown.length).toLocaleString()} of ${rows.length.toLocaleString()} matching`
+  $("count").textContent = match && !match.size ? `No station called “${$("q").value.trim()}” — pick one from the list`
+    : rows.length ? `${(offset + 1).toLocaleString()}–${(offset + shown.length).toLocaleString()} of ${rows.length.toLocaleString()} matching`
     : "No matches";
   $("page").value = page; $("page").max = pages; $("pages").textContent = pages.toLocaleString();
   $("first").disabled = $("prev").disabled = page <= 1;
