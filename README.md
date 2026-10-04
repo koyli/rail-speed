@@ -60,3 +60,8 @@ GitHub Pages serves the page at https://koyli.github.io/rail-speed/.
 deploys every Saturday at 06:00 UTC, on every push to `main`, and on demand
 (Actions tab → Pages → Run workflow). It needs repository secrets `NROD_USER`
 and `NROD_PASS`. Nothing generated is committed: `data/` and `site/` are gitignored.
+
+## Licence
+
+Copyright (C) 2026 koyli. Licensed under the GNU General Public License v3.0
+or later; see [LICENSE](LICENSE).
