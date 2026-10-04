@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 METRES_PER_MILE = 1609.344
-DETOUR_M = 1000   # see Network.positions
+DETOUR_M = 3000   # see Network.positions
 
 
 def load_naptan(path):

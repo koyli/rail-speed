@@ -38,11 +38,12 @@ python3 -m unittest                       # tests on a synthetic fixture
   excluded. Each TIPLOC covers 1-3 km of track nodes, so every stop is placed at
   its centre (the median chainage of its nodes) and distances run centre to
   centre. The path normally stays continuous from leg to leg, but a leg that
-  would make an out-and-back detour to a crossover is re-measured from scratch.
+  that would make an out-and-back detour to a crossover (3 km or more longer
+  than measuring it from scratch) is re-measured from scratch.
   Track can't be shorter than the straight line, so where the measurement comes
   out shorter (local quirks in the model) the straight line is used and the
   figure is marked `≈`. Checked against published mileages: King's
-  Cross–Edinburgh 392.7 (computed 391.4–391.8), Stevenage–Grantham 77.9 (77.9),
+  Cross–Edinburgh 392.7 (computed 392.8–393.2), Stevenage–Grantham 77.9 (77.9),
   Paddington–Bristol 118.3 (117.9–118.6). The first build parses the 650 MB TPS
   XML once and caches the graph.
 - **Routes**: unordered pairs of origin and destination stations, grouped by CRS.

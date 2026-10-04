@@ -38,6 +38,8 @@ th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--lin
 th { font-size: 12px; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.rank { color: var(--muted); width: 1%; }
+th.basis { color: var(--accent); }
+td.basis { font-weight: 650; }
 td.speed { font-weight: 650; position: relative; min-width: 110px; }
 td.speed span { position: relative; }
 td.speed::before { content: ""; position: absolute; inset: 6px auto 6px 0; width: var(--w); background: var(--bar); border-radius: 3px; }
@@ -159,14 +161,14 @@ const COLS = {
     ["Train", (t) => trainRef(t.i, `<span class="mono">${esc(t.hc)}</span> <span class="small">${esc(t.uid)}</span>`)],
     ["From", (t) => esc(t.from)], ["Dep", (t) => `<span class="mono">${t.dep}</span>`],
     ["To", (t) => esc(t.to)], ["Arr", (t) => `<span class="mono">${t.arr}</span>`],
-    ["Time", (t) => dur(t.mins), "num"], ["Miles", null, "num"], ["Stops", (t) => t.stops, "num"],
+    ["Time", (t) => dur(t.mins), "num"], ["Route mi", null, "num"], ["Crow mi", null, "num"], ["Stops", (t) => t.stops, "num"],
     ["Operator", (t) => esc(opName(t.op))], ["Days", (t) => `<span class="mono">${t.days}</span>`],
   ],
   routes: [
     ["#", (r, i) => i + 1, "rank"],
     ["Best speed", null, "speed num"],
     ["Route", (r) => `${esc(r.a)} – ${esc(r.b)}`],
-    ["Miles", null, "num"], ["Fastest time", (r) => dur(r.mins), "num"],
+    ["Route mi", null, "num"], ["Crow mi", null, "num"], ["Fastest time", (r) => dur(r.mins), "num"],
     ["Best train", (r) => trainRef(r.best.i, `<span class="mono">${esc(r.best.hc)}</span> ${r.best.dep} ${esc(r.best.from)} → ${esc(r.best.to)}`)],
     ["Days", (r) => `<span class="mono" title="Days the best speed is available">${r.days}</span>`],
     ["Trains", (r) => r.n, "num"], ["Operators", (r) => esc(r.ops.map(opName).join(", "))],
@@ -175,7 +177,7 @@ const COLS = {
     ["#", (s, i) => i + 1, "rank"],
     ["Speed", null, "speed num"],
     ["From", (s) => esc(s.from)], ["To", (s) => esc(s.to)],
-    ["Time", (s) => dur(s.mins), "num"], ["Miles", null, "num"],
+    ["Time", (s) => dur(s.mins), "num"], ["Route mi", null, "num"], ["Crow mi", null, "num"],
     ["Train", (s) => trainRef(s.ti, `<span class="mono">${esc(s.hc)}</span> dep ${s.dep}`, s.st)],
     ["Days", (s) => `<span class="mono" title="Days the fastest time is available">${s.days}</span>`],
     ["Operator", (s) => esc(opName(s.op))], ["Trains on pair", (s) => s.n, "num"],
@@ -272,7 +274,8 @@ function showTrain(btn) {
   const date = runDate(t.days);
   pop.innerHTML = `<button class="close" aria-label="Close">×</button>
     <h2><span class="mono">${esc(t.hc)}</span> ${esc(t.from)} → ${esc(t.to)}</h2>
-    <div class="small">${esc(opName(t.op))} · ${days} · ${dur(t.mins)} · ${t.rmi.toFixed(1)} mi · ${t.rmph.toFixed(1)} mph</div>
+    <div class="small">${esc(opName(t.op))} · ${days} · ${dur(t.mins)}<br>
+      Route ${t.rmi.toFixed(1)} mi, ${t.rmph.toFixed(1)} mph${t.cmi != null ? ` · Crow flies ${t.cmi.toFixed(1)} mi, ${t.cmph.toFixed(1)} mph` : ""}</div>
     <table><thead><tr><th>Station</th><th class="num">Arr</th><th class="num">Dep</th></tr></thead><tbody>${rows}</tbody></table>
     <a href="https://www.realtimetrains.co.uk/service/gb-nr:${encodeURIComponent(t.uid)}/${date}/detailed" target="_blank" rel="noopener">
       ${esc(t.uid)} on Realtime Trains (${date}) ↗</a>`;
@@ -348,12 +351,20 @@ function render() {
   // Bars scale to the fastest matching row, so they compare across pages.
   const max = rows.reduce((m, x) => Math.max(m, x[sp]), 1);
   const cols = COLS[S.view];
-  let h = "<thead><tr>" + cols.map(([l, , c]) => `<th class="${c || ""}">${l}${l.includes("peed") ? " (mph)" : ""}</th>`).join("") + "</tr></thead><tbody>";
+  // Say which distance the speed uses, and highlight that distance column.
+  const basisCol = S.basis === "r" ? "Route mi" : "Crow mi";
+  const head = (l) => l.includes("peed") ? `${l} (mph, ${S.basis === "r" ? "route miles" : "crow flies"})` : l;
+  let h = "<thead><tr>" + cols.map(([l, , c]) =>
+    `<th class="${c || ""}${l === basisCol ? " basis" : ""}">${head(l)}</th>`).join("") + "</tr></thead><tbody>";
   shown.forEach((x, i) => {
     h += "<tr>" + cols.map(([l, f, c]) => {
       let v;
       if (l.includes("peed")) return `<td class="${c}" style="--w:${(x[sp] / max * 100).toFixed(1)}%"><span>${x[sp].toFixed(1)}</span></td>`;
-      if (l === "Miles") v = mi(x[di], S.basis === "r" ? x.q : null);
+      if (l === "Route mi" || l === "Crow mi") {
+        const route = l === "Route mi";
+        v = mi(route ? x.rmi : x.cmi, route ? x.q : null);
+        return `<td class="${c}${l === basisCol ? " basis" : ""}">${v}</td>`;
+      }
       else v = f(x, offset + i);
       return `<td class="${c || ""}">${v}</td>`;
     }).join("") + "</tr>";
