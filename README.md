@@ -37,7 +37,7 @@ python3 -m unittest                       # tests on a synthetic fixture
   train's actual route. Rail-replacement bus and ship links in the model are
   excluded. Each TIPLOC covers 1-3 km of track nodes, so every stop is placed at
   its centre (the median chainage of its nodes) and distances run centre to
-  centre. The path normally stays continuous from leg to leg, but a leg that
+  centre. The path normally stays continuous from leg to leg, but a leg
   that would make an out-and-back detour to a crossover (3 km or more longer
   than measuring it from scratch) is re-measured from scratch.
   Track can't be shorter than the straight line, so where the measurement comes
