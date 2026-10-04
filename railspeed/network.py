@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 METRES_PER_MILE = 1609.344
-DETOUR_M = 3000   # see Network.positions
+MAX_LENGTH_M = 5000   # cap on a timing point's length, against stray nodes
 
 
 def load_naptan(path):
@@ -56,7 +56,7 @@ class Network:
         self.tiploc_nodes = {}         # tiploc -> nodes it owns (TPS); BPLAN nodes are tiplocs
         self.coords = {}               # tiploc -> (e, n)
         self._cache = {}
-        self._centres = {}
+        self._lengths = {}
         self.chainage = {}             # station node -> (line reference id, metres along it)
         self.suspect = []              # (a, b, network m, straight m) legs rejected as impossible
 
@@ -147,21 +147,14 @@ class Network:
         return None
 
     def positions(self, tiplocs):
-        """Distance along a train's path of each of its timing points, in metres.
+        """Distance along a train's route of each of its timing points (metres,
+        measured to each point's centre).
 
-        A TIPLOC owns a spread of track nodes (often 1-3 km of a station and its
-        approaches). Each point is placed at its centre (see _offset), so
-        distances run centre to centre; measuring node-to-node would drop a
-        station length at each stop, enough to make a 0.8 mile hop shorter than
-        the straight line.
-
-        Normally each leg starts from the exact node the previous one reached,
-        keeping the path continuous (accurate over long distances, where many
-        junction timing points have no usable chainage). But that can strand
-        the path on the wrong running line and send it on an out-and-back to a
-        crossover (20 km near Whitchurch), so each leg is also measured starting
-        from anywhere in the previous point's spread, and that is used when the
-        continuous one is more than DETOUR_M longer.
+        Two simple parts, both the same in either direction of travel:
+        - between consecutive points, the shortest track distance from the
+          nearest node of one to the nearest node of the next;
+        - each point's own length (see length_m), crossed in full when the
+          train passes through, half of it to reach the centre at the ends.
 
         Returns (positions, legs): positions[k] is metres or None for a point
         that couldn't be reached (bridged over); legs is [(k_from, k_to, metres,
@@ -170,38 +163,23 @@ class Network:
         n = len(tiplocs)
         pos = [None] * n
         legs = []
-        first = tiplocs[0]
-        at = tuple(self.nodes_of(first))   # where on the graph we are; () if off it
-        if not at and first not in self.coords:
+        if not self.nodes_of(tiplocs[0]) and tiplocs[0] not in self.coords:
             return None, None
         pos[0] = 0.0
-        cursor = None   # distance along the path of the node `at`, while continuous
         prev_k = 0
         for k in range(1, n):
             a, b = tiplocs[prev_k], tiplocs[k]
             if b == a:
                 pos[k] = pos[prev_k]
                 continue
-            fresh = self._leg(a, tuple(self.nodes_of(a)), b)
-            if fresh is None:
+            r = self._leg(a, tuple(self.nodes_of(a)), b)
+            if r is None:
                 continue
-            if fresh[1] is None:   # straight-line fallback: off the network
-                pos[k] = pos[prev_k] + fresh[0]
-                legs.append((prev_k, k, fresh[0], False))
-                at, cursor, prev_k = tuple(self.nodes_of(b)), None, k
-                continue
-            fresh_m = self._offset(a, fresh[2]) + fresh[0] + self._offset(b, fresh[1])
-            length, end_node = fresh_m, fresh[1]
-            if cursor is not None:
-                cont = self._leg(a, at, b)
-                if cont is not None and cont[1] is not None:
-                    cont_m = cursor + cont[0] + self._offset(b, cont[1]) - pos[prev_k]
-                    if cont_m <= fresh_m + DETOUR_M:
-                        length, end_node = cont_m, cont[1]
-            pos[k] = pos[prev_k] + length
-            legs.append((prev_k, k, length, True))
-            # Continue from the first node reached in b's spread.
-            at, cursor = (end_node,), pos[k] - self._offset(b, end_node)
+            metres, on_network = r[0], r[1] is not None
+            if on_network:
+                metres += (self.length_m(a) + self.length_m(b)) / 2
+            pos[k] = pos[prev_k] + metres
+            legs.append((prev_k, k, metres, on_network))
             prev_k = k
         return pos, legs
 
@@ -212,26 +190,21 @@ class Network:
             return None
         return span(pos, legs, 0, len(tiplocs) - 1)
 
-    def _offset(self, tiploc, node):
-        """Metres from `node` to the centre of its TIPLOC, along the line.
-
-        A TIPLOC's nodes can sprawl (Winsford's run 263.6-266.4 km along the
-        line, in clusters, with other nodes between), so the centre is taken as
-        the median chainage of its nodes on their main line reference, which
-        sits in the main cluster. 0 where chainage isn't comparable."""
-        if tiploc not in self._centres:
+    def length_m(self, tiploc):
+        """Length of track a timing point covers: the spread of its nodes'
+        chainage along their main line reference (a station's platforms and
+        approaches; Winsford's nodes span 2.8 km). Leg distances run nearest
+        node to nearest node, so this is the part they leave out."""
+        if tiploc not in self._lengths:
             marks = [self.chainage[n] for n in self.tiploc_nodes.get(tiploc, ()) if n in self.chainage]
-            centre = None
+            length = 0.0
             if marks:
                 regions = [r for r, _ in marks]
                 region = max(set(regions), key=regions.count)
-                km = sorted(k for r, k in marks if r == region)
-                centre = (region, km[len(km) // 2])
-            self._centres[tiploc] = centre
-        centre, mark = self._centres[tiploc], self.chainage.get(node)
-        if centre is None or mark is None or mark[0] != centre[0]:
-            return 0.0
-        return min(abs(mark[1] - centre[1]), 5000.0)
+                km = [k for r, k in marks if r == region]
+                length = min(max(km) - min(km), MAX_LENGTH_M)
+            self._lengths[tiploc] = length
+        return self._lengths[tiploc]
 
     def _leg(self, a, sources, b):
         """(metres, node reached, node started from) over the network, or
