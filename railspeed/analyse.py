@@ -74,6 +74,15 @@ def analyse(services, net, stations, artefacts=None):
         route_m, quality = _at_least_crow(r, net.crow_m(locs[o].tiploc, locs[d].tiploc))
         crow_m = net.crow_m(locs[o].tiploc, locs[d].tiploc)
         op = sched.atoc
+        calls = [i for i in stops if o <= i <= d]
+        leg_route, leg_crow, leg_mins = [], [], []
+        for a, b in zip(calls, calls[1:]):
+            t0, t1 = _run_times(locs[a], locs[b])
+            crow_ab = net.crow_m(locs[a].tiploc, locs[b].tiploc)
+            m, _ = _at_least_crow(span(pos, legs, a, b) if pos else None, crow_ab)
+            leg_route.append(_mi(m))
+            leg_crow.append(_mi(crow_ab))
+            leg_mins.append(t1 - t0 if t0 is not None and t1 is not None else None)
         trains.append({
             "uid": sched.uid, "hc": sched.headcode, "op": op,
             "from": stations.name(locs[o].tiploc), "to": stations.name(locs[d].tiploc),
@@ -86,8 +95,10 @@ def analyse(services, net, stations, artefacts=None):
             "st": [stations.index(locs[i].tiploc) for i in stops if o <= i <= d],
             # Public arrival and departure at each of those stops, in minutes after
             # the origin departure, flattened: [arr0, dep0, arr1, dep1, ...].
-            "t": [int(round(x - locs[o].pub_dep)) for i in stops if o <= i <= d
-                  for x in _arr_dep(locs[i])],
+            "t": [int(round(x - locs[o].pub_dep)) for i in calls for x in _arr_dep(locs[i])],
+            # Per leg between consecutive calls: route miles, crow miles, and
+            # working-timetable run time in minutes (half-minute precision).
+            "lr": leg_route, "lc": leg_crow, "lw": leg_mins,
         })
 
         # Start-to-stop runs between consecutive calls, on working (half-minute) times.
@@ -95,8 +106,7 @@ def analyse(services, net, stations, artefacts=None):
         # filter can still find an operator's best where another is faster.
         for a, b in zip(stops, stops[1:]):
             la, lb = locs[a], locs[b]
-            t0 = la.dep if la.dep is not None else la.pub_dep
-            t1 = lb.arr if lb.arr is not None else lb.pub_arr
+            t0, t1 = _run_times(la, lb)
             if t0 is None or t1 is None or t1 <= t0:
                 continue
             ka, kb = stations.key(la.tiploc), stations.key(lb.tiploc)
@@ -164,6 +174,14 @@ MAX_ACCEL = 1.0
 
 def _min_run_seconds(metres):
     return 2 * (metres / MAX_ACCEL) ** 0.5
+
+
+def _run_times(la, lb):
+    """Working-timetable departure from one call and arrival at the next
+    (falling back to public times)."""
+    t0 = la.dep if la.dep is not None else la.pub_dep
+    t1 = lb.arr if lb.arr is not None else lb.pub_arr
+    return t0, t1
 
 
 def _arr_dep(loc):

@@ -56,7 +56,7 @@ tr:last-child td { border-bottom: 0; }
 .trainref { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
   text-decoration: underline dotted var(--muted); text-underline-offset: 3px; text-align: left; }
 .trainref:hover, .trainref[aria-expanded="true"] { text-decoration-color: var(--accent); color: var(--accent); }
-#pop { position: fixed; z-index: 10; width: 380px; max-width: calc(100vw - 16px); max-height: min(70vh, 560px);
+#pop { position: fixed; z-index: 10; width: 400px; max-width: calc(100vw - 16px); max-height: min(70vh, 560px);
   overflow: auto; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px;
   box-shadow: 0 10px 30px #0003; padding: 12px 14px; font-size: 14px; }
 #pop[hidden] { display: none; }
@@ -66,6 +66,8 @@ tr:last-child td { border-bottom: 0; }
 #pop table { min-width: 0; margin: 8px 0; }
 #pop td, #pop th { padding: 3px 6px; border: 0; }
 #pop tr.hl td { background: var(--bar); }
+#pop tr.leg td { color: var(--muted); font-size: 12px; padding: 0 6px 2px 14px; }
+#pop tr.leg b { color: var(--ink); font-weight: 600; }
 #pop tr.hl td:first-child { font-weight: 650; }
 #pop a { color: var(--accent); }
 @media (max-width: 640px) { #pop { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto; } }
@@ -268,7 +270,8 @@ function showTrain(btn) {
     const arr = t.t[2 * k], dep = t.t[2 * k + 1], last = k === t.st.length - 1;
     const hl = (seg && k >= segFrom && k <= segTo) || (match && match.has(si));
     return `<tr${hl ? ' class="hl"' : ""}><td>${esc(D.stations[si])}</td>` +
-      `<td class="num mono">${k === 0 ? "" : hhmm(base + arr)}</td><td class="num mono">${last ? "" : hhmm(base + dep)}</td></tr>`;
+      `<td class="num mono">${k === 0 ? "" : hhmm(base + arr)}</td><td class="num mono">${last ? "" : hhmm(base + dep)}</td></tr>` +
+      (last ? "" : legRow(t, k, seg && k >= segFrom && k < segTo));
   }).join("");
   const days = [...t.days].map((c, i) => (c !== "-" ? DAYNAMES[i] : null)).filter(Boolean).join(" ");
   const date = runDate(t.days);
@@ -276,7 +279,7 @@ function showTrain(btn) {
     <h2><span class="mono">${esc(t.hc)}</span> ${esc(t.from)} → ${esc(t.to)}</h2>
     <div class="small">${esc(opName(t.op))} · ${days} · ${dur(t.mins)}<br>
       Route ${t.rmi.toFixed(1)} mi, ${t.rmph.toFixed(1)} mph${t.cmi != null ? ` · Crow flies ${t.cmi.toFixed(1)} mi, ${t.cmph.toFixed(1)} mph` : ""}</div>
-    <table><thead><tr><th>Station</th><th class="num">Arr</th><th class="num">Dep</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th>Station <span class="small">· ↓ speed to next stop, ${S.basis === "r" ? "route miles" : "crow flies"}</span></th><th class="num">Arr</th><th class="num">Dep</th></tr></thead><tbody>${rows}</tbody></table>
     <a href="https://www.realtimetrains.co.uk/service/gb-nr:${encodeURIComponent(t.uid)}/${date}/detailed" target="_blank" rel="noopener">
       ${esc(t.uid)} on Realtime Trains (${date}) ↗</a>`;
   pop.hidden = false;
@@ -284,6 +287,18 @@ function showTrain(btn) {
   const r = btn.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
   pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pw - 8)) + "px";
   pop.style.top = (r.bottom + ph + 8 < innerHeight ? r.bottom + 6 : Math.max(8, r.top - ph - 6)) + "px";
+}
+
+// Average speed from call k to call k+1, on the selected distance and the
+// working-timetable run time (half-minute precision).
+function legRow(t, k, hl) {
+  const miles = (S.basis === "r" ? t.lr : t.lc)[k], mins = t.lw[k];
+  let text;
+  if (miles == null || !mins || mins <= 0) text = "–";
+  else if (mins * 60 < 2 * Math.sqrt(t.lr[k] * 1609.344)) // see analyse._min_run_seconds
+    text = `${miles.toFixed(1)} mi in ${dur(mins)}: faster than a train can start and stop`;
+  else text = `<b>${(miles / (mins / 60)).toFixed(1)} mph</b> · ${miles.toFixed(1)} mi · ${dur(mins)}`;
+  return `<tr class="leg${hl ? " hl" : ""}"><td colspan="3">↓ ${text}</td></tr>`;
 }
 
 function hidePop() {

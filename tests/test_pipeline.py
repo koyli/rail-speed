@@ -63,6 +63,9 @@ class Pipeline(unittest.TestCase):
         names = [stns.names[i] for i in gw["st"]]
         self.assertEqual(names, ["London Paddington", "Reading", "Swindon", "Bristol Temple Meads"])
         self.assertEqual(gw["t"], [0, 0, 23, 25, 53, 54, 90, 90])
+        self.assertEqual(gw["lw"], [23, 28, 35.5])   # working times: 1054H dep Swindon
+        self.assertEqual(len(gw["lr"]), 3)
+        self.assertAlmostEqual(sum(gw["lr"]), gw["rmi"], places=1)
         self.assertTrue(103 < gw["cmi"] < 105)        # Paddington-Bristol TM ~104 mi crow
         # KX-York has no network links: falls back to straight line, flagged.
         lner = next(t for t in trains if t["uid"] == "L00001")
