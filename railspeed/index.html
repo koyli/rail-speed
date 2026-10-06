@@ -296,7 +296,7 @@ function legRow(t, k, hl) {
   let text;
   if (miles == null || !mins || mins <= 0) text = "–";
   else if (mins * 60 < 2 * Math.sqrt(t.lr[k] * 1609.344)) // see analyse._min_run_seconds
-    text = `${miles.toFixed(1)} mi in ${dur(mins)}: faster than a train can start and stop`;
+    text = `<span title="The working timetable is in half-minutes, too coarse for a hop this short: ${dur(mins)} is quicker than a train can start and stop over ${miles.toFixed(1)} miles.">${miles.toFixed(1)} mi in ${dur(mins)}: too short to time reliably</span>`;
   else text = `<b>${(miles / (mins / 60)).toFixed(1)} mph</b> · ${miles.toFixed(1)} mi · ${dur(mins)}`;
   return `<tr class="leg${hl ? " hl" : ""}"><td colspan="3">↓ ${text}</td></tr>`;
 }

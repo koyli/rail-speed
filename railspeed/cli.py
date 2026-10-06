@@ -53,7 +53,7 @@ def cmd_build(args):
     artefacts = []
     trains, segs = analyse.analyse(services, net, stations, artefacts)
     if artefacts:
-        print(f"  {len(artefacts)} start-to-stop runs dropped as impossibly fast for their distance, e.g. "
+        print(f"  {len(artefacts)} start-to-stop runs dropped as too short to time reliably, e.g. "
               + ", ".join(f"{u} {a}-{b} {m:.1f}min/{d / 1609.344:.2f}mi" for u, a, b, m, d in artefacts[:4]))
     if net.suspect:
         print(f"  {len(net.suspect)} network legs rejected as shorter than the straight line, e.g. "

@@ -32,26 +32,29 @@ python3 -m unittest                       # tests on a synthetic fixture
   the GB section, with "Paris Nord" as a stub at the tunnel boundary.
 - **End-to-end**: public departure at the first public call to public arrival at
   the last one, including dwell time at stops.
-- **Route miles**: the track distance through every timing point the train
-  passes, passing points included, so it follows the train's actual route.
-  Two parts, both the same in either direction: the shortest distance between
-  consecutive timing points (nearest track node to nearest track node), plus
-  each timing point's own length (the chainage spread of its nodes, e.g. a
-  station's platforms), crossed in full when passing through and half of it at
-  each end. Rail-replacement bus and ship links in the model are excluded.
+- **Route miles**: the length of the shortest path through the track network
+  that passes through every timing point the train passes, in order (passing
+  points included, so it follows the train's actual route). Each stop sits at
+  the middle of the stretch of that path inside it; the first and last get
+  half a platform. It's the same path either way, so distances match in both
+  directions. Rail-replacement bus and ship links in the model are excluded.
   Track can't be shorter than the straight line, so where the measurement
   comes out shorter (local quirks in the model) the straight line is used and
   the figure is marked `≈`. Checked against published mileages, both ways:
-  King's Cross–Newcastle 268.3 (computed 268.1), King's Cross–Edinburgh 392.7
-  (392.8), Euston–Glasgow 401.2 (400.7–401.0). The first build parses the
-  650 MB TPS XML once and caches the graph.
+  King's Cross–Edinburgh 392.7 (computed 392.5–392.9), King's Cross–Newcastle
+  268.3 (268.5), King's Cross–York 188.3 (188.2), Euston–Glasgow 401.2
+  (400.3–401.5). Sunday East Coast trains diverted via Lincoln show about 12
+  miles more. The first build parses the 650 MB TPS XML once and caches the
+  graph.
 - **Routes**: unordered pairs of origin and destination stations, grouped by CRS.
   A route's speed is the speed of its fastest train.
 - **Start-to-stop**: the fastest working-timetable run between each pair of
   consecutive calls, kept per operator so the operator filter works. Runs
   timed faster than a train could start and stop over that distance (1 m/s²
-  accelerating and braking) are timetable artefacts and are dropped, e.g. 30
-  seconds for the mile from Southend Central to Southend East.
+  accelerating and braking) are dropped as too short to time reliably: the
+  working timetable is in half-minutes, too coarse for very short hops (e.g.
+  1 minute for 0.6 miles from Highbury & Islington to Canonbury). In the train
+  details panel such legs say so instead of showing a speed.
 
 ## Publishing
 

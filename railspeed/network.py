@@ -22,7 +22,8 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 METRES_PER_MILE = 1609.344
-MAX_LENGTH_M = 5000   # cap on a timing point's length, against stray nodes
+END_M = 300           # half of this from where a route starts or ends to the station's centre
+MAX_SPREAD_M = 5000   # a timing point's nodes more than this beyond its nearest are ignored
 
 
 def load_naptan(path):
@@ -56,8 +57,8 @@ class Network:
         self.tiploc_nodes = {}         # tiploc -> nodes it owns (TPS); BPLAN nodes are tiplocs
         self.coords = {}               # tiploc -> (e, n)
         self._cache = {}
-        self._lengths = {}
         self.chainage = {}             # station node -> (line reference id, metres along it)
+        self._routes = {}
         self.suspect = []              # (a, b, network m, straight m) legs rejected as impossible
 
     @property
@@ -148,40 +149,110 @@ class Network:
 
     def positions(self, tiplocs):
         """Distance along a train's route of each of its timing points (metres,
-        measured to each point's centre).
+        to each point's centre).
 
-        Two simple parts, both the same in either direction of travel:
-        - between consecutive points, the shortest track distance from the
-          nearest node of one to the nearest node of the next;
-        - each point's own length (see length_m), crossed in full when the
-          train passes through, half of it to reach the centre at the ends.
+        The route is the single shortest path through the track network that
+        passes through at least one node of every timing point, in order. Each
+        point's position is the middle of the stretch of that path inside it,
+        so station lengths are counted exactly as crossed, nothing depends on
+        the direction of travel (reversed, it's the same path), and the path
+        never takes a needless out-and-back. The first and last points get half
+        a platform (END_M / 2) beyond where the path starts and ends. A point
+        off the network is bridged over, or joined by a straight line if it has
+        coordinates.
 
         Returns (positions, legs): positions[k] is metres or None for a point
-        that couldn't be reached (bridged over); legs is [(k_from, k_to, metres,
-        on_network)]. Returns (None, None) if the start can't be placed (e.g.
-        Paris for Eurostar)."""
+        that couldn't be placed; legs is [(k_from, k_to, metres, on_network)].
+        Returns (None, None) if the start can't be placed (e.g. Paris for
+        Eurostar)."""
+        key = tuple(tiplocs)
+        if key not in self._routes:
+            self._routes[key] = self._positions(tiplocs)
+        return self._routes[key]
+
+    def _positions(self, tiplocs):
         n = len(tiplocs)
-        pos = [None] * n
-        legs = []
         if not self.nodes_of(tiplocs[0]) and tiplocs[0] not in self.coords:
             return None, None
+        pos = [None] * n
+        legs = []
         pos[0] = 0.0
-        prev_k = 0
-        for k in range(1, n):
-            a, b = tiplocs[prev_k], tiplocs[k]
-            if b == a:
-                pos[k] = pos[prev_k]
-                continue
-            r = self._leg(a, tuple(self.nodes_of(a)), b)
-            if r is None:
-                continue
-            metres, on_network = r[0], r[1] is not None
-            if on_network:
-                metres += (self.length_m(a) + self.length_m(b)) / 2
-            pos[k] = pos[prev_k] + metres
-            legs.append((prev_k, k, metres, on_network))
-            prev_k = k
+        start = 0
+        while True:
+            run = self._path_run(tiplocs, start)
+            for k, p in run.items():
+                pos[k] = pos[start] + p
+            ks = sorted(run)
+            for k0, k1 in zip(ks, ks[1:]):
+                legs.append((k0, k1, pos[k1] - pos[k0], True))
+            last = ks[-1]
+            # The run stopped short: bridge to the next point with a straight line.
+            nxt = next((k for k in range(last + 1, n)
+                        if self.crow_m(tiplocs[last], tiplocs[k]) is not None), None)
+            if nxt is None:
+                break
+            straight = self.crow_m(tiplocs[last], tiplocs[nxt])
+            pos[nxt] = pos[last] + straight
+            legs.append((last, nxt, straight, False))
+            start = nxt
         return pos, legs
+
+    def _path_run(self, tiplocs, start):
+        """Shortest path from tiplocs[start] through each following point
+        reachable on the network, until one isn't. Returns {k: metres from the
+        start point's centre to point k's centre}."""
+        n = len(tiplocs)
+        first = self.nodes_of(tiplocs[start])
+        if not first:
+            return {start: 0.0}
+        layers = [(start, {u: 0.0 for u in first}, {}, {u: u for u in first})]
+        for k in range(start + 1, n):
+            t = tiplocs[k]
+            if t == tiplocs[layers[-1][0]]:
+                continue
+            targets = set(self.nodes_of(t))
+            if not targets:
+                if t in self.coords:
+                    break        # off the network but placeable: end the run here
+                continue         # can't place it at all: bridge over it
+            prev_k, prev_dp = layers[-1][0], layers[-1][1]
+            base = min(prev_dp.values())
+            straight = self.crow_m(tiplocs[prev_k], t)
+            reach = 3 * straight + 10_000 if straight is not None else 150_000
+            r = _layer_dijkstra(self.adj, prev_dp, targets, base + reach)
+            if r is None:
+                break
+            dp, pred, origin = r
+            if straight is not None and min(dp.values()) - base < straight - 1500:
+                self.suspect.append((tiplocs[prev_k], t, min(dp.values()) - base, straight))
+                break
+            layers.append((k, dp, pred, origin))
+        # Backtrack from the nearest node of the last point: for each point, the
+        # node the path leaves it from (exit) and first reaches it at (entry).
+        out = {}
+        exit_node = min(layers[-1][1], key=layers[-1][1].get)
+        for i in range(len(layers) - 1, -1, -1):
+            k, dp, pred, origin = layers[i]
+            entry = exit_node
+            if i > 0:
+                u = exit_node
+                while u in pred and origin[u] != u:
+                    u = pred[u]
+                    if u in dp:
+                        entry = u
+            if i == len(layers) - 1 and i > 0:
+                out[k] = dp[entry] + self._end(tiplocs[k])
+            elif i == 0:
+                out[k] = dp[exit_node] - self._end(tiplocs[k])
+            else:
+                out[k] = (dp[entry] + dp[exit_node]) / 2
+            if i > 0:
+                exit_node = origin[entry]
+        base = out[start]
+        return {k: v - base for k, v in out.items()}
+
+    def _end(self, tiploc):
+        return END_M / 2 if len(self.nodes_of(tiploc)) > 1 else 0.0
 
     def route_m(self, tiplocs):
         """(metres, fraction measured on the network) from first to last point, or None."""
@@ -189,22 +260,6 @@ class Network:
         if pos is None or pos[-1] is None:
             return None
         return span(pos, legs, 0, len(tiplocs) - 1)
-
-    def length_m(self, tiploc):
-        """Length of track a timing point covers: the spread of its nodes'
-        chainage along their main line reference (a station's platforms and
-        approaches; Winsford's nodes span 2.8 km). Leg distances run nearest
-        node to nearest node, so this is the part they leave out."""
-        if tiploc not in self._lengths:
-            marks = [self.chainage[n] for n in self.tiploc_nodes.get(tiploc, ()) if n in self.chainage]
-            length = 0.0
-            if marks:
-                regions = [r for r, _ in marks]
-                region = max(set(regions), key=regions.count)
-                km = [k for r, k in marks if r == region]
-                length = min(max(km) - min(km), MAX_LENGTH_M)
-            self._lengths[tiploc] = length
-        return self._lengths[tiploc]
 
     def _leg(self, a, sources, b):
         """(metres, node reached, node started from) over the network, or
@@ -328,6 +383,39 @@ def span(pos, legs, i, j):
     measured = sum(m for a, b, m, on in legs if on and i <= a and b <= j)
     straight = sum(m for a, b, m, on in legs if not on and i <= a and b <= j)
     return total, (measured / (measured + straight) if measured + straight else 1.0)
+
+
+def _layer_dijkstra(adj, init, targets, limit):
+    """Shortest paths from a weighted set of start nodes ({node: distance so
+    far}) to the nodes of `targets` within MAX_SPREAD_M of the nearest.
+    Returns ({target: distance}, pred, origin), or None if none is reached."""
+    dist = dict(init)
+    pred, origin = {}, {u: u for u in init}
+    heap = [(d, u) for u, d in init.items()]
+    heapq.heapify(heap)
+    found, first = {}, None
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d > dist[u]:
+            continue
+        if d > limit or (first is not None and d > first + MAX_SPREAD_M):
+            break
+        if u in targets and u not in found:
+            found[u] = d
+            if first is None:
+                first = d
+            if len(found) == len(targets):
+                break
+        for v, w in adj[u].items():
+            nd = d + w
+            if nd < dist.get(v, math.inf):
+                dist[v] = nd
+                pred[v] = u
+                origin[v] = origin[u]
+                heapq.heappush(heap, (nd, v))
+    if not found:
+        return None
+    return found, pred, origin
 
 
 def _dijkstra(adj, sources, targets, limit):

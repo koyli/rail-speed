@@ -52,7 +52,7 @@ def _public_stops(locs):
 
 
 def analyse(services, net, stations, artefacts=None):
-    """`artefacts`, if given, collects start-to-stop runs dropped as impossibly fast."""
+    """`artefacts`, if given, collects start-to-stop runs dropped as too short to time."""
     trains, segs = [], {}
     artefacts = artefacts if artefacts is not None else []
     for sched, dates in services:
@@ -166,9 +166,11 @@ def _at_least_crow(r, crow_m):
     return m, q
 
 
-# Generous acceleration and braking (m/s^2): a start-to-stop run timed faster
-# than this allows is a timetable artefact (e.g. a working timetable giving 30
-# seconds for the mile from Southend Central to Southend East).
+# Generous acceleration and braking (m/s^2). A start-to-stop run timed faster
+# than this allows can't be timed reliably: the working timetable is in
+# half-minutes, too coarse for very short hops (it gives 1 minute for 0.6
+# miles from Highbury & Islington to Canonbury, and 30 seconds for the mile
+# from Southend Central to Southend East).
 MAX_ACCEL = 1.0
 
 
