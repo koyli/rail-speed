@@ -1,6 +1,7 @@
 # Raw downloads: large, and need an NROD login to fetch.
 data/*
 !data/naptan_rail.csv
+!data/extra_stations.csv
 __pycache__/
 *.pyc
 .DS_Store

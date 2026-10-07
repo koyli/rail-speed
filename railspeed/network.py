@@ -67,6 +67,17 @@ def _station_name_key(name):
     return " ".join(words)
 
 
+def load_extra_stations(path):
+    """TIPLOC -> (easting, northing, name) from data/extra_stations.csv: stations
+    the timetable calls at that NaPTAN doesn't list (Severn Valley Railway)."""
+    coords = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = csv.DictReader(line for line in f if not line.startswith("#"))
+        for row in rows:
+            coords[row["tiploc"]] = (float(row["easting"]), float(row["northing"]), row["name"])
+    return coords
+
+
 def borrow_coords(coords, tiplocs):
     """Coordinates for timetable TIPLOCs NaPTAN lacks, from another TIPLOC at
     the same place: same STANOX first, then same CRS (e.g. Ashford

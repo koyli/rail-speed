@@ -1,0 +1,10 @@
+# Stations the timetable calls at that NaPTAN (National Rail only) doesn't list.
+# OSGB36 easting/northing in metres: the centre of the station's 100 m grid
+# square from its six-figure grid reference.
+tiploc,easting,northing,name,source
+KDRMSVR,383750,276250,Kidderminster Town,https://en.wikipedia.org/wiki/Kidderminster_Town_railway_station (SO837762)
+BEWDLEY,379150,275350,Bewdley,https://en.wikipedia.org/wiki/Bewdley_railway_station (SO791753)
+ARLEY,376450,279950,Arley,https://en.wikipedia.org/wiki/Arley_railway_station (SO764799)
+HGHLY,374950,283050,Highley,https://en.wikipedia.org/wiki/Highley_railway_station (SO749830)
+HLDE,374450,286250,Hampton Loade,https://en.wikipedia.org/wiki/Hampton_Loade_railway_station (SO744862)
+BNRTH,371550,292650,Bridgnorth,https://en.wikipedia.org/wiki/Bridgnorth_railway_station (SO715926)

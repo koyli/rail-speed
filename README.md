@@ -19,16 +19,18 @@ python3 -m unittest                       # tests on a synthetic fixture
 | Need | Source |
 |---|---|
 | Trains | NROD SCHEDULE, `CIF_ALL_FULL_DAILY` / `toc-full` (JSON lines) |
-| Crow-flies | NaPTAN rail stations; `ATCOCode` is `9100` + TIPLOC; OSGB eastings/northings. Inactive records are used where there's no active one, and a TIPLOC NaPTAN lacks borrows the position of another at the same station (same STANOX, CRS, or name without a platform qualifier such as "ELL") |
+| Crow-flies | NaPTAN rail stations; `ATCOCode` is `9100` + TIPLOC; OSGB eastings/northings. Inactive records are used where there's no active one, and a TIPLOC NaPTAN lacks borrows the position of another at the same station (same STANOX, CRS, or name without a platform qualifier such as "ELL"). Stations NaPTAN doesn't list at all, such as the Severn Valley Railway's, are in `data/extra_stations.csv` with their sources |
 | Route miles | TPS network model (`SupportingFileAuthenticate?type=TPS`): track graph, edge lengths in metres; BPLAN also supported |
 
 - **Which trains run**: for each date, each train UID uses its valid schedule
   with the highest-priority STP indicator (C cancel > N > O overlay > P). Trains
   with identical timings on different days are merged, and their days are listed.
+- **Heritage lines on their own track** (Severn Valley Railway) are included:
+  they run as proper trains and don't share lines with the rest of the network.
 - **Passenger only**: status P/1 and advertised categories (OO, XX, XZ, ...);
   buses, ships, empty stock, unadvertised trains, London Underground trains and
-  heritage/charter operators (NYMR, West Coast Railways' Jacobite, etc.),
-  trains starting or ending on a heritage line (Severn Valley) and the
+  heritage/charter operators sharing Network Rail lines (NYMR, West Coast
+  Railways' Jacobite, etc.) and the
   Sheffield tram-train are excluded. So is Eurostar: its schedules only model
   the GB section, with "Paris Nord" as a stub at the tunnel boundary.
 - **End-to-end**: public departure at the first public call to public arrival at
@@ -47,6 +49,11 @@ python3 -m unittest                       # tests on a synthetic fixture
   (400.3–401.5). Sunday East Coast trains diverted via Lincoln show about 12
   miles more. The first build parses the 650 MB TPS XML once and caches the
   graph.
+- **Coordinate checks**: every NaPTAN rail record is inside the national grid
+  and its grid reference agrees with its latitude/longitude (checked once,
+  October 2026); each build warns about any station too far from its
+  neighbouring calls to reach in the timetabled time at 150 mph, which would
+  catch one misplaced, say, in the sea.
 - **Routes**: unordered pairs of origin and destination stations, grouped by CRS.
   A route's speed is the speed of its fastest train.
 - **Start-to-stop**: the fastest working-timetable run between each pair of

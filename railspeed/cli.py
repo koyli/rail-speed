@@ -26,6 +26,10 @@ def cmd_build(args):
 
     naptan_path = os.path.join(args.data, "naptan_rail.csv")
     naptan = network.load_naptan(naptan_path) if os.path.exists(naptan_path) else {}
+    extra_path = os.path.join(args.data, "extra_stations.csv")
+    if os.path.exists(extra_path):
+        for k, v in network.load_extra_stations(extra_path).items():
+            naptan.setdefault(k, v)
     print(f"  NaPTAN: {len(naptan)} stations with coordinates")
 
     net = network.Network()
@@ -62,6 +66,10 @@ def cmd_build(args):
     if net.suspect:
         print(f"  {len(net.suspect)} network legs rejected as shorter than the straight line, e.g. "
               + ", ".join(f"{a}-{b} {m:.0f}m vs {c:.0f}m" for a, b, m, c in net.suspect[:5]))
+    misplaced = analyse.misplaced_stations(trains, stations.names)
+    if misplaced:
+        print(f"  WARNING: {len(misplaced)} stations look misplaced (too far from their neighbours to "
+              "reach in the timetabled time): " + ", ".join(f"{s} ({v:.0f} mph)" for s, v in misplaced.items()))
     measured = sum(1 for t in trains if t["q"] >= 0.99)
     print(f"  {len(trains)} trains, {len(segs)} start-to-stop bests (per pair and operator); "
           f"{measured} trains fully measured on the network")

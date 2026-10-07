@@ -178,6 +178,23 @@ def _min_run_seconds(metres):
     return 2 * (metres / MAX_ACCEL) ** 0.5
 
 
+# Faster than any GB train runs (HS1's 140 mph line speed, with margin).
+MAX_CROW_MPH = 150
+
+
+def misplaced_stations(trains, names):
+    """Stations whose straight-line distance to a neighbouring call is too far
+    to cover in the timetabled time: a sign of bad coordinates (e.g. a station
+    placed in the sea). Returns {name: worst implied mph}."""
+    worst = {}
+    for t in trains:
+        for k, (crow_mi, mins) in enumerate(zip(t["lc"], t["lw"])):
+            if crow_mi is not None and mins and crow_mi / (mins / 60) > MAX_CROW_MPH:
+                for i in t["st"][k:k + 2]:
+                    worst[names[i]] = max(worst.get(names[i], 0), crow_mi / (mins / 60))
+    return worst
+
+
 def _run_times(la, lb):
     """Working-timetable departure from one call and arrival at the next
     (falling back to public times)."""

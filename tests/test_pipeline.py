@@ -111,6 +111,12 @@ class Pipeline(unittest.TestCase):
                                     {"HIGHBYE": T("HIGHBYE", None, "HIGHBURY AND ISLINGTON ELL", None)})
         self.assertEqual(got["HIGHBYE"][:2], (531500, 184900))     # same name, platform qualifier dropped
 
+    def test_misplaced_station_detected(self):
+        names = ["Aberdeen", "Stonehaven", "Ok A", "Ok B"]
+        trains = [{"st": [0, 1], "lc": [80.0], "lw": [15]},    # 80 mi in 15 min: 320 mph
+                  {"st": [2, 3], "lc": [10.0], "lw": [10]}]    # 60 mph: fine
+        self.assertEqual(set(analyse.misplaced_stations(trains, names)), {"Aberdeen", "Stonehaven"})
+
     def test_build_writes_site(self):
         with tempfile.TemporaryDirectory() as out:
             cli.main(["build", "--date", "2026-10-05", "--schedule", os.path.join(FIX, "schedule.json"),

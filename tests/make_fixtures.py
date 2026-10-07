@@ -53,7 +53,6 @@ RECORDS = [
     {"JsonTimetableV1": {"classification": "public", "timestamp": 0}},
     {"TiplocV1": {"tiploc_code": "PADTON", "crs_code": "PAD", "tps_description": "LONDON PADDINGTON"}},
     {"TiplocV1": {"tiploc_code": "BRSTLTM", "crs_code": "BRI", "tps_description": "BRISTOL TEMPLE MEADS"}},
-    {"TiplocV1": {"tiploc_code": "KIDDSVR", "crs_code": None, "tps_description": "KIDDERMINSTER S.V.R."}},
     sched("G00001", "P", "2026-01-01", "2026-12-31", "1111100", GW_FAST),
     sched("G00001", "O", "2026-10-07", "2026-10-07", "0010000", GW_OVERLAY),  # Wednesday
     sched("G00001", "C", "2026-10-08", "2026-10-08", "0001000", None),        # Thursday
@@ -63,9 +62,6 @@ RECORDS = [
     sched("B00001", "P", "2026-01-01", "2026-12-31", "1111111", LNER, cat="BR", status="B", atoc="GR"),
     sched("E00001", "P", "2026-01-01", "2026-12-31", "1111111", LNER, cat="EE", atoc="GR"),
     sched("H00001", "P", "2026-01-01", "2026-12-31", "1111111", LNER, atoc="NY"),  # heritage
-    sched("V00001", "P", "2026-01-01", "2026-12-31", "1111111",
-          [loc("LO", "KIDDSVR", dep="1000", pdep="1000"), loc("LT", "YORK", arr="1100", parr="1100")],
-          atoc="LM"),  # heritage line (Severn Valley), mainline operator
     sched("X00001", "P", "2025-01-01", "2025-12-31", "1111111", LNER, atoc="GR"),  # expired
     {"EOF": True},
 ]
