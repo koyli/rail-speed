@@ -16,6 +16,7 @@ import heapq
 import math
 import os
 import pickle
+import re
 import statistics
 import tarfile
 import xml.etree.ElementTree as ET
@@ -27,12 +28,16 @@ MAX_SPREAD_M = 5000   # a timing point's nodes more than this beyond its nearest
 
 
 def load_naptan(path):
-    """TIPLOC -> (easting, northing, name) from a NaPTAN stops CSV (rail, area 910)."""
-    coords = {}
+    """TIPLOC -> (easting, northing, name) from a NaPTAN stops CSV (rail, area 910).
+
+    Inactive records are used too, where a TIPLOC has no active one: the
+    timetable still calls at some of them (St Pancras, Stratford and Ebbsfleet
+    Internationals' main codes) and their coordinates are still good."""
+    coords, inactive = {}, {}
     with open(path, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             atco = row.get("ATCOCode", "")
-            if not atco.startswith("9100") or row.get("Status", "active") not in ("active", ""):
+            if not atco.startswith("9100"):
                 continue
             try:
                 e, n = float(row["Easting"]), float(row["Northing"])
@@ -43,8 +48,56 @@ def load_naptan(path):
                 if name.endswith(suffix):
                     name = name[: -len(suffix)]
                     break
-            coords[atco[4:]] = (e, n, name)
+            active = row.get("Status", "active") in ("active", "")
+            (coords if active else inactive)[atco[4:]] = (e, n, name)
+    for tiploc, v in inactive.items():
+        coords.setdefault(tiploc, v)
     return coords
+
+
+# Trailing words in timetable names that pick out platforms, not a station.
+_QUALIFIERS = {"ELL", "HL", "LL", "LT", "METRO", "SVR", "PLATFORM", "PLATFORMS", "PLAT", "PLATS"}
+
+
+def _station_name_key(name):
+    """'HIGHBURY AND ISLINGTON ELL' and 'Highbury & Islington' -> same key."""
+    words = re.sub(r"[^A-Z0-9 ]", " ", name.upper().replace("&", " AND ")).split()
+    while words and (words[-1] in _QUALIFIERS or words[-1].isdigit()):
+        words.pop()
+    return " ".join(words)
+
+
+def borrow_coords(coords, tiplocs):
+    """Coordinates for timetable TIPLOCs NaPTAN lacks, from another TIPLOC at
+    the same place: same STANOX first, then same CRS (e.g. Ashford
+    International's HS1 platforms, ASHFKI), then the same name once platform
+    qualifiers are dropped, if that's unambiguous (Highbury & Islington's East
+    London line platforms, HIGHBYE). Returns the additions."""
+    by_stanox, by_crs = {}, {}
+    for code, t in tiplocs.items():
+        if code in coords:
+            if t.stanox:
+                by_stanox.setdefault(t.stanox, coords[code])
+            if t.crs:
+                by_crs.setdefault(t.crs, coords[code])
+    by_name = {}
+    for v in coords.values():
+        by_name.setdefault(_station_name_key(v[2]), []).append(v)
+    extra = {}
+    for code, t in tiplocs.items():
+        if code not in coords:
+            v = by_stanox.get(t.stanox) if t.stanox else None
+            if v is None and t.crs:
+                v = by_crs.get(t.crs)
+            if v is None:
+                same = by_name.get(_station_name_key(t.name), [])
+                # Unambiguous: one station, or several records all at one spot
+                # (Highbury & Islington has two, 10 m apart).
+                if same and all(crow(same[0], o) <= 500 for o in same):
+                    v = same[0]
+            if v is not None:
+                extra[code] = v
+    return extra
 
 
 def crow(a, b):

@@ -21,6 +21,9 @@ PASSENGER_STATUS = {"P", "1"}
 # Eurostar, whose schedules only model the GB section ("Paris Nord" is a
 # boundary stub by the tunnel, so its times and distances are meaningless).
 EXCLUDED_OPERATORS = {"NY", "WR", "TY", "LS", "PO", "SJ", "ES"}
+# Heritage lines reached by mainline operators' trains, by a marker in their
+# stations' timetable names (Severn Valley Railway: "KIDDERMINSTER S.V.R.").
+HERITAGE_STATION_MARKERS = ("S.V.R",)
 STP_RANK = {"C": 0, "N": 1, "O": 2, "P": 3}
 
 # One timing point: minutes after midnight (float, half-minutes kept) with the
@@ -103,6 +106,11 @@ def load(path, window_start, window_end):
                     if s.get("atoc_code") in EXCLUDED_OPERATORS:
                         continue
                     if not seg.get("schedule_location"):
+                        continue
+                    ends = (seg["schedule_location"][0], seg["schedule_location"][-1])
+                    if any(m in tiplocs[e["tiploc_code"].strip()].name
+                           for e in ends if e["tiploc_code"].strip() in tiplocs
+                           for m in HERITAGE_STATION_MARKERS):
                         continue
                 by_uid[s["CIF_train_uid"]].append(Schedule(
                     uid=s["CIF_train_uid"], stp=stp, start=start, end=end,

@@ -98,6 +98,19 @@ class Pipeline(unittest.TestCase):
         # 1.6 km start-to-stop needs at least 80 s at 1 m/s^2; 30 s is an artefact.
         self.assertAlmostEqual(analyse._min_run_seconds(1600), 80)
 
+    def test_borrow_coords_from_same_station(self):
+        T = schedule.Tiploc
+        tiplocs = {"ASHFKY": T("ASHFKY", "AFK", "ASHFORD INTERNATIONAL", "86531"),
+                   "ASHFKI": T("ASHFKI", "ASI", "ASHFORD INT (PLATS 3-4)", "86531"),
+                   "STFODOM": T("STFODOM", "SFA", "STRATFORD INTL (DOMESTIC)", "51416"),
+                   "STFOX": T("STFOX", "SFA", "STRATFORD INTL OTHER", None)}
+        got = network.borrow_coords({"ASHFKY": (601282, 142204, "Ashford"), "STFODOM": (538175, 184760, "Stratford")}, tiplocs)
+        self.assertEqual(got["ASHFKI"][:2], (601282, 142204))      # same STANOX
+        self.assertEqual(got["STFOX"][:2], (538175, 184760))       # same CRS
+        got = network.borrow_coords({"HIGHBYI": (531500, 184900, "Highbury & Islington")},
+                                    {"HIGHBYE": T("HIGHBYE", None, "HIGHBURY AND ISLINGTON ELL", None)})
+        self.assertEqual(got["HIGHBYE"][:2], (531500, 184900))     # same name, platform qualifier dropped
+
     def test_build_writes_site(self):
         with tempfile.TemporaryDirectory() as out:
             cli.main(["build", "--date", "2026-10-05", "--schedule", os.path.join(FIX, "schedule.json"),

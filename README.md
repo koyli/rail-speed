@@ -19,7 +19,7 @@ python3 -m unittest                       # tests on a synthetic fixture
 | Need | Source |
 |---|---|
 | Trains | NROD SCHEDULE, `CIF_ALL_FULL_DAILY` / `toc-full` (JSON lines) |
-| Crow-flies | NaPTAN rail stations; `ATCOCode` is `9100` + TIPLOC; OSGB eastings/northings |
+| Crow-flies | NaPTAN rail stations; `ATCOCode` is `9100` + TIPLOC; OSGB eastings/northings. Inactive records are used where there's no active one, and a TIPLOC NaPTAN lacks borrows the position of another at the same station (same STANOX, CRS, or name without a platform qualifier such as "ELL") |
 | Route miles | TPS network model (`SupportingFileAuthenticate?type=TPS`): track graph, edge lengths in metres; BPLAN also supported |
 
 - **Which trains run**: for each date, each train UID uses its valid schedule
@@ -27,7 +27,8 @@ python3 -m unittest                       # tests on a synthetic fixture
   with identical timings on different days are merged, and their days are listed.
 - **Passenger only**: status P/1 and advertised categories (OO, XX, XZ, ...);
   buses, ships, empty stock, unadvertised trains, London Underground trains and
-  heritage/charter operators (NYMR, West Coast Railways' Jacobite, etc.) and the
+  heritage/charter operators (NYMR, West Coast Railways' Jacobite, etc.),
+  trains starting or ending on a heritage line (Severn Valley) and the
   Sheffield tram-train are excluded. So is Eurostar: its schedules only model
   the GB section, with "Paris Nord" as a stub at the tunnel boundary.
 - **End-to-end**: public departure at the first public call to public arrival at
